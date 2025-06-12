@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug API Company Search</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .result { background: #f5f5f5; padding: 15px; border: 1px solid #ddd; margin: 10px 0; }
+        .error { color: red; }
+        .success { color: green; }
+        button { padding: 10px 15px; margin: 5px; }
+        input { padding: 8px; margin: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>Debug API Company Search</h1>
+    
+    <h2>1. Test Authentication</h2>
+    <input type="text" id="username" placeholder="Username" value="admin">
+    <input type="password" id="password" placeholder="Password" value="admin123">
+    <button onclick="testLogin()">Test Login</button>
+    <div id="loginResult" class="result"></div>
+    
+    <h2>2. Test Auth Debug Endpoint</h2>
+    <button onclick="testAuthDebug()">Test Auth Debug</button>
+    <div id="authDebugResult" class="result"></div>
+    
+    <h2>3. Test Company Search</h2>
+    <input type="text" id="companyName" placeholder="Nome azienda" value="LATTANZIO">
+    <button onclick="searchCompany()">Test Company Search</button>
+    <div id="searchResult" class="result"></div>
+    
+    <h2>4. Test Health Check</h2>
+    <button onclick="testHealth()">Test Health</button>
+    <div id="healthResult" class="result"></div>
+
+    <!-- Company Streaming Search Section -->
+    <div class="section">
+        <h2>🔄 Company Streaming Search (SSE)</h2>
+        <form id="streamingSearchForm">
+            <input 
+                type="text" 
+                id="streamingCompanyName" 
+                placeholder="Company Name" 
+                required 
+                minlength="2"
+                value="microsoft"
+            >
+            <select id="streamingYearFilter">
+                <option value="">Tutti gli anni</option>
+                <option value="2024">2024</option>
+                <option value="2023">2023</option>
+                <option value="2022">2022</option>
+                <option value="2021">2021</option>
+                <option value="2020">2020</option>
+                <option value="2019">2019</option>
+                <option value="2018">2018</option>
+                <option value="2017">2017</option>
+                <option value="2016">2016</option>
+                <option value="2015">2015</option>
+            </select>
+            <button type="submit">Start Streaming Search</button>
+        </form>
+        
+        <div id="streamingProgress" style="display: none;">
+            <h3>Search Progress</h3>
+            <div id="streamingStatus"></div>
+            <div id="streamingProgressBar" style="background: #eee; height: 20px; margin: 10px 0;">
+                <div id="streamingProgressFill" style="background: #333; height: 100%; width: 0%; transition: width 0.3s;"></div>
+            </div>
+            <div id="streamingResults"></div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = null;
+        
+        async function testLogin() {
+            const resultDiv = document.getElementById('loginResult');
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                resultDiv.innerHTML = 'Logging in...';
+                
+                const response = await fetch('http://127.0.0.1:8000/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    authToken = data.access_token;
+                    resultDiv.innerHTML = `
+                        <div class="success">Login successful!</div>
+                        <p>Token: ${authToken.substring(0, 20)}...</p>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">Login failed: ${data.detail || 'Unknown error'}</div>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">Error: ${error.message}</div>
+                `;
+            }
+        }
+        
+        async function testAuthDebug() {
+            const resultDiv = document.getElementById('authDebugResult');
+            
+            if (!authToken) {
+                resultDiv.innerHTML = '<div class="error">Please login first!</div>';
+                return;
+            }
+            
+            try {
+                resultDiv.innerHTML = 'Testing auth debug...';
+                
+                const response = await fetch('http://127.0.0.1:8000/api/v1/search/debug-auth', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="${response.ok ? 'success' : 'error'}">
+                        Status: ${response.status} ${response.statusText}
+                    </div>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">Error: ${error.message}</div>
+                `;
+            }
+        }
+        
+        async function searchCompany() {
+            const resultDiv = document.getElementById('searchResult');
+            const companyName = document.getElementById('companyName').value;
+            
+            if (!authToken) {
+                resultDiv.innerHTML = '<div class="error">Please login first!</div>';
+                return;
+            }
+            
+            try {
+                resultDiv.innerHTML = 'Searching...';
+                
+                const response = await fetch(`http://127.0.0.1:8000/api/v1/search/company?company_name=${encodeURIComponent(companyName)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="${response.ok ? 'success' : 'error'}">
+                        Status: ${response.status} ${response.statusText}
+                    </div>
+                    <p><strong>Company Name:</strong> ${data.company_name || 'N/A'}</p>
+                    <p><strong>Found:</strong> ${data.found}</p>
+                    <p><strong>Total Matches:</strong> ${data.total_matches || 0}</p>
+                    <p><strong>Tables Searched:</strong> ${data.tables_searched || 0}</p>
+                    <p><strong>Results by Table:</strong> ${data.results_by_table ? data.results_by_table.length : 'N/A'}</p>
+                    
+                    <h4>Raw Response:</h4>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">Error: ${error.message}</div>
+                `;
+            }
+        }
+        
+        async function testHealth() {
+            const resultDiv = document.getElementById('healthResult');
+            
+            try {
+                resultDiv.innerHTML = 'Testing health...';
+                
+                const response = await fetch('http://127.0.0.1:8000/api/v1/health');
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="${response.ok ? 'success' : 'error'}">
+                        Status: ${response.status} ${response.statusText}
+                    </div>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">Error: ${error.message}</div>
+                `;
+            }
+        }
+
+        // Company Streaming Search with SSE
+        document.getElementById('streamingSearchForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            testStreamingSearch();
+        });
+
+        async function testStreamingSearch() {
+            const companyName = document.getElementById('streamingCompanyName').value;
+            const yearFilter = document.getElementById('streamingYearFilter').value;
+            const progressDiv = document.getElementById('streamingProgress');
+            const statusDiv = document.getElementById('streamingStatus');
+            const progressBar = document.getElementById('streamingProgressFill');
+            const resultsDiv = document.getElementById('streamingResults');
+
+            // Show progress
+            progressDiv.style.display = 'block';
+            statusDiv.textContent = 'Initializing streaming search...';
+            progressBar.style.width = '0%';
+            resultsDiv.innerHTML = '';
+
+            try {
+                const token = localStorage.getItem('jwt_token');
+                if (!token) {
+                    statusDiv.textContent = 'Error: No authentication token found';
+                    return;
+                }
+
+                const params = new URLSearchParams({ 
+                    company_name: companyName,
+                    authorization: `Bearer ${token}`
+                });
+                if (yearFilter) {
+                    params.append('year_filter', yearFilter);
+                }
+                const url = `${API_BASE_URL}/search/company-stream?${params}`;
+                console.log('Making SSE request to:', url);
+
+                const eventSource = new EventSource(url);
+                let totalMatches = 0;
+                let currentProgress = { tableIndex: 0, totalTables: 1 };
+
+                eventSource.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('Received SSE data:', data);
+
+                        switch (data.type) {
+                            case 'status':
+                                statusDiv.textContent = data.message;
+                                break;
+
+                            case 'tables_count':
+                                currentProgress.totalTables = data.total_tables;
+                                statusDiv.textContent = `Found ${data.total_tables} tables to search`;
+                                break;
+
+                            case 'progress':
+                                currentProgress.tableIndex = data.table_index;
+                                currentProgress.totalTables = data.total_tables;
+                                const percentage = (data.table_index / data.total_tables) * 100;
+                                progressBar.style.width = `${percentage}%`;
+                                statusDiv.textContent = `Searching table: ${data.current_table} (${data.table_index}/${data.total_tables})`;
+                                break;
+
+                            case 'table_result':
+                                totalMatches += data.matches;
+                                const resultHtml = `
+                                    <div style="margin: 5px 0; padding: 10px; background: #f0f0f0; border-left: 3px solid #28a745;">
+                                        <strong>✅ ${data.table_name}</strong>: ${data.matches} matches (${data.search_time}s)
+                                        <div style="font-size: 0.9em; color: #666;">Company columns: ${data.company_columns.join(', ')}</div>
+                                    </div>
+                                `;
+                                resultsDiv.innerHTML += resultHtml;
+                                statusDiv.textContent = `Found ${totalMatches} total matches so far...`;
+                                break;
+
+                            case 'table_no_results':
+                                const noResultHtml = `
+                                    <div style="margin: 5px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #ccc;">
+                                        <strong>⚪ ${data.table_name}</strong>: No results (${data.search_time}s)
+                                    </div>
+                                `;
+                                resultsDiv.innerHTML += noResultHtml;
+                                break;
+
+                            case 'table_skipped':
+                                const skippedHtml = `
+                                    <div style="margin: 5px 0; padding: 10px; background: #fff3cd; border-left: 3px solid #ffc107;">
+                                        <strong>⏭️ ${data.table_name}</strong>: Skipped (${data.reason})
+                                    </div>
+                                `;
+                                resultsDiv.innerHTML += skippedHtml;
+                                break;
+
+                            case 'table_error':
+                                const errorHtml = `
+                                    <div style="margin: 5px 0; padding: 10px; background: #f8d7da; border-left: 3px solid #dc3545;">
+                                        <strong>❌ ${data.table_name}</strong>: Error - ${data.error}
+                                    </div>
+                                `;
+                                resultsDiv.innerHTML += errorHtml;
+                                break;
+
+                            case 'final_summary':
+                                progressBar.style.width = '100%';
+                                statusDiv.innerHTML = `
+                                    <strong>🎉 Search completed!</strong><br>
+                                    Company: ${data.company_name}<br>
+                                    Total matches: ${data.total_matches}<br>
+                                    Tables searched: ${data.tables_searched}<br>
+                                    Tables with results: ${data.tables_with_results}<br>
+                                    Timestamp: ${data.search_timestamp}
+                                `;
+                                eventSource.close();
+                                break;
+
+                            case 'error':
+                                statusDiv.textContent = `Error: ${data.message}`;
+                                eventSource.close();
+                                break;
+                        }
+                    } catch (parseError) {
+                        console.error('Error parsing SSE data:', parseError);
+                        statusDiv.textContent = 'Error parsing server response';
+                        eventSource.close();
+                    }
+                };
+
+                eventSource.onerror = function(error) {
+                    console.error('SSE connection error:', error);
+                    statusDiv.textContent = 'Connection error during streaming search';
+                    eventSource.close();
+                };
+
+                // Timeout after 2 minutes
+                setTimeout(() => {
+                    if (eventSource.readyState !== EventSource.CLOSED) {
+                        console.warn('SSE timeout - closing connection');
+                        eventSource.close();
+                        statusDiv.textContent = 'Search timeout';
+                    }
+                }, 120000);
+
+            } catch (error) {
+                console.error('Streaming search error:', error);
+                statusDiv.textContent = `Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html> 

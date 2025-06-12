@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    container_name: dbsee-backend
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+    volumes:
+      - backend_logs:/app/logs
+    expose:
+      - "8000"
+    networks:
+      - dbsee-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: dbsee-frontend
+    restart: unless-stopped
+    ports:
+      - "80:8080"
+      - "443:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - dbsee-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Optional: Reverse proxy with SSL
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:alpine
+    container_name: dbsee-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - nginx_certs:/etc/nginx/certs:ro
+      - nginx_vhost:/etc/nginx/vhost.d
+      - nginx_html:/usr/share/nginx/html
+    environment:
+      - DEFAULT_HOST=${DOMAIN_NAME:-localhost}
+    networks:
+      - dbsee-network
+    profiles:
+      - proxy
+
+  # Optional: SSL certificates with Let's Encrypt
+  letsencrypt:
+    image: nginxproxy/acme-companion
+    container_name: dbsee-letsencrypt
+    restart: unless-stopped
+    environment:
+      - DEFAULT_EMAIL=${LETSENCRYPT_EMAIL}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - nginx_certs:/etc/nginx/certs:rw
+      - nginx_vhost:/etc/nginx/vhost.d
+      - nginx_html:/usr/share/nginx/html
+    depends_on:
+      - nginx-proxy
+    networks:
+      - dbsee-network
+    profiles:
+      - ssl
+
+networks:
+  dbsee-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  backend_logs:
+    driver: local
+  nginx_certs:
+    driver: local
+  nginx_vhost:
+    driver: local
+  nginx_html:
+    driver: local 

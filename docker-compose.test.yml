@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DB_HOST=db-test
+      - DB_PORT=3306
+      - DB_USER=test_user
+      - DB_PASSWORD=test_password
+      - DB_NAME=test_db
+      - JWT_SECRET_KEY=test_secret_key
+      - JWT_ALGORITHM=HS256
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - ALLOWED_ORIGINS=http://localhost:3000
+      - DEBUG=true
+      - LOG_LEVEL=debug
+    command: ["pytest", "-v", "--cov=app", "--cov-report=xml"]
+    depends_on:
+      - db-test
+    networks:
+      - test-network
+    volumes:
+      - ./backend:/app
+
+  frontend-test:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    command: ["npm", "test", "--", "--coverage", "--watchAll=false"]
+    environment:
+      - REACT_APP_API_URL=http://backend-test:8000/api/v1
+      - CI=true
+    networks:
+      - test-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  db-test:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=test_root_password
+      - MYSQL_DATABASE=test_db
+      - MYSQL_USER=test_user
+      - MYSQL_PASSWORD=test_password
+    tmpfs:
+      - /var/lib/mysql
+    networks:
+      - test-network
+    command: --default-authentication-plugin=mysql_native_password
+
+  integration-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["pytest", "tests/integration/", "-v"]
+    environment:
+      - DB_HOST=db-test
+      - DB_PORT=3306
+      - DB_USER=test_user
+      - DB_PASSWORD=test_password
+      - DB_NAME=test_db
+      - JWT_SECRET_KEY=test_secret_key
+      - BACKEND_URL=http://backend-test:8000
+    depends_on:
+      - backend-test
+      - db-test
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge 
