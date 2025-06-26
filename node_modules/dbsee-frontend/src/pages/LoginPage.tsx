@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useMutation, useQueryClient } from 'react-query';
-import { Database, Eye, EyeOff, Sparkles, Shield, Zap } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useMutation } from 'react-query';
+import { Eye, EyeOff, Database, Zap, Lock, User, ArrowRight } from 'lucide-react';
 import { authAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -10,220 +10,156 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
   const loginMutation = useMutation(authAPI.login, {
     onSuccess: () => {
-      toast.success('Benvenuto in DBSee! 🎉');
-      // Invalidate queries and force a refresh
-      queryClient.invalidateQueries('currentUser');
-      queryClient.refetchQueries('currentUser');
-      // Small delay to ensure token is properly set
-      setTimeout(() => {
+      toast.success('Login effettuato con successo!');
       navigate('/');
-      }, 100);
     },
-    onError: () => {
-      toast.error('Credenziali non valide. Riprova.');
+    onError: (error: any) => {
+      toast.error(error.message || 'Errore durante il login');
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || !password) {
-      toast.error('Compila tutti i campi');
-      return;
-    }
     loginMutation.mutate({ username, password });
   };
 
-  const features = [
-    {
-      icon: Database,
-      title: 'Esplora Database',
-      description: 'Naviga e analizza i tuoi dati con facilità'
-    },
-    {
-      icon: Zap,
-      title: 'Ricerca Veloce',
-      description: 'Trova quello che cerchi in tempo reale'
-    },
-    {
-      icon: Shield,
-      title: 'Sicuro & Affidabile',
-      description: 'I tuoi dati sono protetti e al sicuro'
-    }
-  ];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50 flex">
-      {/* Sezione sinistra - Features */}
-      <div className="hidden lg:flex lg:flex-1 lg:flex-col lg:justify-center lg:px-12 lg:py-12">
-        <div className="mx-auto max-w-md">
-          {/* Logo e titolo */}
-          <div className="text-center mb-12">
-            <div className="relative inline-block">
-              <div className="w-16 h-16 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl flex items-center justify-center shadow-lg mb-4">
-                <Database className="h-8 w-8 text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1">
-                <Sparkles className="h-6 w-6 text-accent-500 animate-pulse-soft" />
-              </div>
-            </div>
-            <h1 className="text-3xl font-bold text-gradient mb-2">
-              DBSee
-            </h1>
-            <p className="text-neutral-600 text-lg">
-              La tua finestra sui dati
-            </p>
-          </div>
-
-          {/* Features */}
-          <div className="space-y-6">
-            {features.map((feature, index) => {
-              const Icon = feature.icon;
-              return (
-                <div 
-                  key={index} 
-                  className="flex items-start space-x-4 p-4 rounded-xl bg-white/60 backdrop-blur-sm border border-neutral-200/50 animate-slide-up"
-                  style={{ animationDelay: `${index * 200}ms` }}
-                >
-                  <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <Icon className="h-5 w-5 text-primary-600" />
-                  </div>
-        <div>
-                    <h3 className="font-semibold text-neutral-900 mb-1">
-                      {feature.title}
-                    </h3>
-                    <p className="text-sm text-neutral-600">
-                      {feature.description}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+    <div className="min-h-screen bg-gray-900 relative overflow-hidden flex items-center justify-center">
+      {/* Background Effects Neon */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="bg-orb-cyan top-1/4 left-1/4"></div>
+        <div className="bg-orb-purple top-3/4 right-1/4"></div>
+        <div className="bg-orb-pink top-1/2 left-3/4"></div>
+        <div className="absolute top-10 right-10 w-32 h-32 bg-cyan-500/5 rounded-full blur-2xl animate-float"></div>
+        <div className="absolute bottom-10 left-10 w-40 h-40 bg-purple-500/5 rounded-full blur-2xl animate-pulse"></div>
       </div>
 
-      {/* Sezione destra - Form di login */}
-      <div className="flex-1 flex flex-col justify-center px-6 py-12 lg:px-8">
-        <div className="mx-auto w-full max-w-md">
-          {/* Header mobile */}
-          <div className="text-center lg:hidden mb-8">
-            <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-lg mx-auto mb-4">
-              <Database className="h-6 w-6 text-white" />
+      {/* Login Container */}
+      <div className="relative z-10 w-full max-w-md px-6">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-4 mb-6">
+            <div className="relative">
+              <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl animate-glow-pulse">
+                <Database className="h-10 w-10 text-white" />
+              </div>
+              <div className="absolute -inset-2 bg-gradient-to-br from-cyan-500 to-purple-600 rounded-2xl opacity-20 blur-lg"></div>
             </div>
-            <h2 className="text-2xl font-bold text-neutral-900">
-              Benvenuto in DBSee
-            </h2>
-            <p className="text-neutral-600 text-sm mt-2">
-              Accedi al tuo account per continuare
-            </p>
           </div>
-
-          {/* Header desktop */}
-          <div className="hidden lg:block text-center mb-8">
-            <h2 className="text-3xl font-bold text-neutral-900 mb-2">
-              Accedi al tuo account
-          </h2>
-            <p className="text-neutral-600">
-              Inserisci le tue credenziali per continuare
+          
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <Zap className="h-8 w-8 text-cyan-400 animate-bounce-icon" />
+            <h1 className="text-4xl font-bold gradient-text animate-neon-pulse">
+              DBSee
+            </h1>
+            <Zap className="h-8 w-8 text-purple-400 animate-bounce-icon" style={{ animationDelay: '0.5s' }} />
+          </div>
+          
+          <p className="text-lg text-gray-400 mb-2">Database Explorer</p>
+          <p className="text-sm text-gray-500">
+            Accedi al <span className="gradient-text-purple font-semibold">futuro</span> dei database
           </p>
         </div>
 
-          {/* Form di login */}
-          <div className="card p-8 animate-scale-in">
-            <form className="space-y-6" onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label htmlFor="username" className="form-label">
-                  Nome utente
+        {/* Login Form */}
+        <div className="card-neon p-8 backdrop-blur-xl animate-slide-in">
+          <h2 className="text-2xl font-bold text-white mb-6 text-center flex items-center justify-center gap-2">
+            <Lock className="h-6 w-6 text-cyan-400" />
+            Accesso Sicuro
+          </h2>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Username Field */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                <User className="h-4 w-4 text-cyan-400" />
+                Username
               </label>
               <input
-                id="username"
-                name="username"
                 type="text"
-                required
-                className="input"
-                  placeholder="Inserisci il tuo username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                  autoComplete="username"
+                placeholder="inserisci il tuo username"
+                className="input-neon text-white placeholder:text-gray-500"
+                required
+                disabled={loginMutation.isLoading}
               />
             </div>
 
-              <div className="form-group">
-                <label htmlFor="password" className="form-label">
+            {/* Password Field */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                <Lock className="h-4 w-4 text-purple-400" />
                 Password
               </label>
-                <div className="relative">
-              <input
-                id="password"
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                required
-                    className="input pr-12"
-                    placeholder="Inserisci la tua password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
-              />
-              <button
-                type="button"
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-neutral-400 hover:text-neutral-600 transition-colors duration-200"
-                onClick={() => setShowPassword(!showPassword)}
-              >
-                {showPassword ? (
-                      <EyeOff className="h-5 w-5" />
-                ) : (
-                      <Eye className="h-5 w-5" />
-                )}
-              </button>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="inserisci la password"
+                  className="input-neon text-white placeholder:text-gray-500 pr-12"
+                  required
+                  disabled={loginMutation.isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-cyan-300 transition-colors duration-300"
+                  disabled={loginMutation.isLoading}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
 
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loginMutation.isLoading}
-                className="btn-primary w-full btn-lg"
+              className="btn-neon w-full mt-8 group"
             >
               {loginMutation.isLoading ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="spinner w-4 h-4" />
-                    Accesso in corso...
+                <div className="flex items-center justify-center gap-2">
+                  <div className="spinner-neon w-4 h-4" />
+                  <span>Accesso...</span>
                 </div>
               ) : (
-                  'Accedi'
+                <div className="flex items-center justify-center gap-2">
+                  <span>Accedi al Sistema</span>
+                  <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform duration-300" />
+                </div>
               )}
             </button>
-            </form>
-          </div>
+          </form>
 
-          {/* Credenziali demo */}
-          <div className="mt-6">
-            <div className="alert-info">
-              <div className="flex items-start space-x-3">
-                <div className="w-5 h-5 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <Database className="h-3 w-3 text-primary-600" />
-                </div>
-                <div>
-                  <h4 className="font-medium text-primary-900 mb-2">
-                    Credenziali Demo
-                  </h4>
-                  <div className="text-sm space-y-1">
-                    <div className="flex justify-between">
-                      <span className="font-medium">Username:</span>
-                      <code className="px-2 py-1 bg-primary-100 rounded text-primary-800">admin</code>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="font-medium">Password:</span>
-                      <code className="px-2 py-1 bg-primary-100 rounded text-primary-800">admin123</code>
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {/* Demo Credentials */}
+          <div className="mt-8 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
+            <h3 className="text-sm font-medium text-cyan-300 mb-2 flex items-center gap-2">
+              🚀 Credenziali Demo
+            </h3>
+            <div className="space-y-1 text-xs text-gray-400">
+              <p><span className="text-cyan-400">Username:</span> admin</p>
+              <p><span className="text-purple-400">Password:</span> admin123</p>
             </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-8">
+          <p className="text-sm text-gray-500">
+            Accedendo accetti i{' '}
+            <Link to="/terms" className="text-cyan-400 hover:text-cyan-300 transition-colors duration-300">
+              termini di servizio
+            </Link>
+          </p>
         </div>
       </div>
     </div>

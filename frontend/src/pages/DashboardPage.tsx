@@ -9,8 +9,7 @@ import {
   Building2, 
   Zap,
   BarChart3,
-  TrendingUp,
-  Loader2
+  TrendingUp
 } from 'lucide-react';
 import { tablesAPI, searchAPI } from '../services/api';
 import SearchByCIG from '../components/SearchByCIG';
@@ -25,6 +24,14 @@ import {
   StreamError,
   StreamTableResult
 } from '../types/api';
+import { 
+  getBadgeClass,
+  categorizeField,
+  formatDisplayValue,
+  getCategoryIcon,
+  generateQuickLinks,
+  type CIGRecord 
+} from '../utils/mockData';
 
 interface StreamingProgress {
   currentTable: string;
@@ -40,7 +47,7 @@ const DashboardPage = () => {
   const [searchType, setSearchType] = useState<SearchType>('cig');
   const [searchResults, setSearchResults] = useState<CIGSearchResult | null>(null);
   const [companyResults, setCompanyResults] = useState<CompanyResult | null>(null);
-  const [useDirectSearch, setUseDirectSearch] = useState<boolean>(true);
+  const [activeCategory, setActiveCategory] = useState<CIGRecord['categoria'] | null>(null);
   
   // Streaming search state
   const [streamingProgress, setStreamingProgress] = useState<StreamingProgress | null>(null);
@@ -51,14 +58,35 @@ const DashboardPage = () => {
     if (!searchResults?.found || !searchResults.merged_data) return [];
     
     return Object.entries(searchResults.merged_data)
-      .map(([key, value]) => ({
-        campo: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        valore: String(value ?? 'N/A'),
-        fonte: searchResults.field_sources?.[key] || 'Sconosciuto',
-      }))
+      .map(([key, value]) => {
+        const campo = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const rawValue = String(value ?? 'N/A');
+        const fonte = searchResults.field_sources?.[key] || 'Sconosciuto';
+        const categoria = categorizeField(key, rawValue);
+        const icon = getCategoryIcon(categoria);
+        const valore = formatDisplayValue(rawValue, categoria);
+        
+        return {
+          campo,
+          valore,
+          fonte,
+          categoria,
+          icon
+        };
+      })
       .filter(item => item.valore && item.valore.toLowerCase() !== 'n/a' && item.valore.trim() !== '');
 
   }, [searchResults]);
+
+  // Generate quick links for categories using the enhanced function
+  const quickLinks = useMemo(() => {
+    return generateQuickLinks(cigDataForTable);
+  }, [cigDataForTable]);
+
+  const filteredCigData = useMemo(() => {
+    if (!activeCategory) return cigDataForTable;
+    return cigDataForTable.filter(item => item.categoria === activeCategory);
+  }, [cigDataForTable, activeCategory]);
 
   const {
     data: tables,
@@ -69,6 +97,7 @@ const DashboardPage = () => {
     onSuccess: (data) => {
       setSearchResults(data);
       setCompanyResults(null);
+      setActiveCategory(null); // Reset category filter
     },
   });
 
@@ -123,122 +152,87 @@ const DashboardPage = () => {
             found: data.found,
             total_matches: data.total_matches,
             tables_searched: data.tables_searched,
-            search_timestamp: data.search_timestamp,
-            results_by_table: allResults.map(r => ({
-                table_name: r.table_name,
-                matches: r.matches,
-                data: r.data,
-            })),
-          };
+          } as CompanyResult;
           
-          setCompanyResults(finalData);
-          setStreamingStatus('Ricerca completata!');
+          setStreamingProgress(null);
+          setStreamingStatus('');
           resolve(finalData);
         };
 
         const handleError = (error: StreamError) => {
           console.error('Streaming error:', error);
-          setStreamingStatus(`Errore: ${error.message || 'Errore sconosciuto'}`);
-          reject(error);
+          setStreamingProgress(null);
+          setStreamingStatus('');
+          reject(new Error(error.detail || 'Errore durante la ricerca'));
         };
 
+        // Reset state
+        setTotalMatches(0);
         setStreamingProgress(null);
         setStreamingStatus('Avvio ricerca...');
-        setTotalMatches(0);
-        setCompanyResults(null);
-        setSearchResults(null);
 
+        // Start the streaming search
         searchAPI.searchByCompanyStream(
-          searchParams.companyName,
+          searchParams.companyName, 
           searchParams.yearFilter,
           handleProgress,
           handleComplete,
           handleError
-        ).catch(reject);
+        );
       });
     },
     {
       onSuccess: (data) => {
-        console.log('Company search completed:', data);
-        setStreamingStatus('Ricerca completata!');
+        console.log('Company search completed successfully:', data);
       },
-      onError: (error: Error) => {
-        console.error('Company search error:', error);
-        setStreamingStatus(`Errore: ${error.message || 'Errore sconosciuto'}`);
-      },
+      onError: (error) => {
+        console.error('Company search failed:', error);
+        setStreamingProgress(null);
+        setStreamingStatus('');
+      }
     }
   );
 
-  const handleCIGSearch = (cig: string) => {
-    cigSearchMutation.mutate(cig);
-  };
-
-  const handleCompanySearch = (companyName: string, yearFilter?: number) => {
-    if (useDirectSearch) {
-      directSearchMutation.mutate({ companyName, yearFilter });
-    } else {
-      companySearchMutation.mutate({ companyName, yearFilter });
-    }
-  };
-
-  // Direct search mutation with streaming
   const directSearchMutation = useMutation(
     async (searchParams: { companyName: string; yearFilter?: number }) => {
-      setStreamingStatus('Inizializzazione ricerca diretta...');
-      
       return new Promise((resolve, reject) => {
         const handleProgress = (data: DirectCompanySearchStreamEvent) => {
-          console.log('Direct streaming progress:', data);
+          console.log('Direct search progress:', data);
           
-          if (data.type === 'search_started') {
-            setStreamingStatus(`🎯 Ricerca diretta avviata per: ${data.company_name}`);
-          } else if (data.type === 'progress') {
+          if (data.type === 'progress') {
             setStreamingStatus(data.message);
-          } else if (data.type === 'aggiudicatari_results') {
+          }
+          
+          if (data.type === 'aggiudicatari_results') {
             setStreamingStatus(`📊 Trovati ${data.matches_found} match in aggiudicatari_data`);
             setCompanyResults({
               company_name: searchParams.companyName,
-              year_filter: searchParams.yearFilter,
               found: data.matches_found > 0,
-              search_method: 'direct_streaming',
               aggiudicatari_matches: data.matches_found,
               aggiudicatari_summary: data.data,
-              cig_details: [],
-              streaming: true,
               search_time: data.search_time
-            });
-          } else if (data.type === 'cig_progress') {
-            setStreamingStatus(data.message);
-          } else if (data.type === 'cig_detail') {
-            setCompanyResults((prev) => {
-              if (!prev) return null;
-              return {
-                ...prev,
-                cig_details: [...(prev.cig_details || []), data.data]
-              };
-            });
+            } as CompanyResult);
+            setSearchResults(null);
           }
         };
 
         const handleComplete = (data: StreamFinalSummary) => {
           console.log('Direct search completed:', data);
-          setCompanyResults((prev) => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              ...data,
-              streaming: false
-            }
-          });
-          setStreamingStatus('Ricerca diretta completata!');
-          resolve(data);
+          setStreamingProgress(null);
+          setStreamingStatus('');
+          resolve(data as any);
         };
 
         const handleError = (error: StreamError) => {
           console.error('Direct search error:', error);
-          setStreamingStatus(`Errore: ${error.message || 'Errore sconosciuto'}`);
-          reject(error);
+          setStreamingProgress(null);
+          setStreamingStatus('');
+          reject(new Error(error.message || 'Errore durante la ricerca diretta'));
         };
+
+        // Reset state
+        setStreamingProgress(null);
+        setStreamingStatus('Avvio ricerca diretta...');
 
         searchAPI.searchByCompanyDirectStream(
           searchParams.companyName,
@@ -246,388 +240,399 @@ const DashboardPage = () => {
           handleProgress,
           handleComplete,
           handleError
-        ).catch(reject);
+        );
       });
-    },
-    {
-      onSuccess: (data) => {
-        console.log('Direct search completed:', data);
-      },
-      onError: (error: Error) => {
-        console.error('Direct search error:', error);
-      },
     }
   );
 
-  // Reset results when changing search mode
-  const handleSearchModeChange = (isDirect: boolean) => {
-    setUseDirectSearch(isDirect);
-    setSearchResults(null);
-    setCompanyResults(null);
-    setStreamingProgress(null);
-    setStreamingStatus('');
-    setTotalMatches(0);
-  };
-
   const getTableDisplayName = (tableName: string): string => {
-    return tableName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const displayNames: Record<string, string> = {
+      'aggiudicatari_data': 'Aggiudicatari',
+      'aggiudicazioni_data': 'Aggiudicazioni',
+      'cig_data': 'CIG',
+      'lotti_data': 'Lotti',
+      'partecipanti_data': 'Partecipanti',
+      'pubblicazioni_data': 'Pubblicazioni',
+      'quadro_economico_data': 'Quadro Economico',
+      'categorie_opera_data': 'Categorie Opera',
+      'categorie_dpcm_data': 'Categorie DPCM',
+      'avvio_contratto_data': 'Avvio Contratto',
+      'fonti_finanziamento_data': 'Fonti Finanziamento',
+      'lavorazioni_data': 'Lavorazioni'
+    };
+    
+    return displayNames[tableName] || tableName;
   };
 
-  const searchTypes = [
-    {
-      id: 'cig',
-      name: 'Ricerca CIG',
-      description: 'Cerca informazioni tramite Codice Identificativo Gara',
-      icon: Search,
-      gradient: 'from-primary-500 to-primary-600'
-    },
-    {
-      id: 'company',
-      name: 'Ricerca Azienda',
-      description: 'Cerca contratti e gare per nome azienda',
-      icon: Building2,
-      gradient: 'from-accent-500 to-accent-600'
-    }
-  ];
+  const handleCIGSearch = (cig: string) => {
+    cigSearchMutation.mutate(cig);
+  };
+
+  const handleCompanySearch = (companyName: string, yearFilter?: number) => {
+    companySearchMutation.mutate({ companyName, yearFilter });
+  };
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      {/* Header */}
-      <div className="text-center lg:text-left">
-        <h1 className="text-4xl font-bold text-neutral-900 mb-4">
-          Benvenuto in{' '}
-          <span className="text-gradient">DBSee</span>
-        </h1>
-        <p className="text-lg text-neutral-600 max-w-2xl">
-          Esplora e analizza i dati del database in modo intuitivo e veloce. 
-          Cerca per CIG o per nome azienda e accedi alle tabelle disponibili.
-        </p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl animate-float" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }} />
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-pink-500/5 rounded-full blur-3xl animate-float" style={{ animationDelay: '4s' }} />
       </div>
 
-      {/* Statistics Cards */}
-      {tables && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="card-hover p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-neutral-600">Tabelle Disponibili</p>
-                <p className="text-2xl font-bold text-neutral-900">{tables.length}</p>
+      <div className="container mx-auto px-4 py-8 relative z-10 space-y-8">
+        {/* Header */}
+        <div className="text-center space-y-4">
+          <div className="flex items-center justify-center gap-4">
+            <Zap className="h-12 w-12 text-cyan-400 animate-bounce" />
+            <h1 className="text-5xl font-bold gradient-text">
+              DBSee Dashboard
+            </h1>
+            <Zap className="h-12 w-12 text-purple-400 animate-bounce" style={{ animationDelay: '0.5s' }} />
+          </div>
+          <p className="text-xl text-gray-300 max-w-2xl mx-auto">
+            🚀 Esplora il database degli appalti pubblici con tecnologie futuristiche
+          </p>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="card-neon p-6 hover:scale-105 transition-all duration-300">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl shadow-lg">
+                <Database className="h-8 w-8 text-white" />
               </div>
-              <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center">
-                <Database className="h-6 w-6 text-primary-600" />
+              <div>
+                <h3 className="text-2xl font-bold text-white">{tables?.length || 0}</h3>
+                <p className="text-gray-400">Database Attivi</p>
               </div>
             </div>
           </div>
-          
-          <div className="card-hover p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-neutral-600">Ricerche Attive</p>
-                <p className="text-2xl font-bold text-neutral-900">
-                  {(cigSearchMutation.isLoading || companySearchMutation.isLoading || directSearchMutation.isLoading) ? '1' : '0'}
-                </p>
+
+          <div className="card-neon-purple p-6 hover:scale-105 transition-all duration-300">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl shadow-lg">
+                <BarChart3 className="h-8 w-8 text-white" />
               </div>
-              <div className="w-12 h-12 bg-accent-100 rounded-xl flex items-center justify-center">
-                <TrendingUp className="h-6 w-6 text-accent-600" />
+              <div>
+                <h3 className="text-2xl font-bold text-white">{totalMatches.toLocaleString()}</h3>
+                <p className="text-gray-400">Records Trovati</p>
               </div>
             </div>
           </div>
-          
-          <div className="card-hover p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-neutral-600">Risultati Trovati</p>
-                <p className="text-2xl font-bold text-neutral-900">{totalMatches}</p>
+
+          <div className="card-neon-green p-6 hover:scale-105 transition-all duration-300">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-emerald-500 to-green-600 rounded-xl shadow-lg">
+                <TrendingUp className="h-8 w-8 text-white" />
               </div>
-              <div className="w-12 h-12 bg-success-100 rounded-xl flex items-center justify-center">
-                <BarChart3 className="h-6 w-6 text-success-600" />
+              <div>
+                <h3 className="text-2xl font-bold text-white">AI-Powered</h3>
+                <p className="text-gray-400">Smart Search</p>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Search Type Selection */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div 
+            onClick={() => setSearchType('cig')}
+            className={`card-neon p-6 cursor-pointer transition-all duration-300 ${
+              searchType === 'cig' 
+                ? 'border-cyan-500/50 shadow-cyan-500/20 bg-cyan-500/5' 
+                : 'hover:border-cyan-500/30'
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl shadow-lg">
+                <Search className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">Ricerca CIG</h3>
+                <p className="text-gray-400">Cerca per Codice Identificativo Gara</p>
+              </div>
+              {searchType === 'cig' && (
+                <div className="ml-auto w-4 h-4 bg-cyan-400 rounded-full animate-pulse" />
+              )}
+            </div>
+          </div>
+
+          <div 
+            onClick={() => setSearchType('company')}
+            className={`card-neon p-6 cursor-pointer transition-all duration-300 ${
+              searchType === 'company' 
+                ? 'border-purple-500/50 shadow-purple-500/20 bg-purple-500/5' 
+                : 'hover:border-purple-500/30'
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl shadow-lg">
+                <Building2 className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">Ricerca Azienda</h3>
+                <p className="text-gray-400">Cerca per nome dell'azienda</p>
+              </div>
+              {searchType === 'company' && (
+                <div className="ml-auto w-4 h-4 bg-purple-400 rounded-full animate-pulse" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Search Forms */}
+        <div className="space-y-6">
+          {searchType === 'cig' ? (
+            <SearchByCIG 
+              onSearch={handleCIGSearch}
+              isLoading={cigSearchMutation.isLoading}
+            />
+          ) : (
+            <AdvancedSearch
+              onSearch={handleCompanySearch}
+              isLoading={companySearchMutation.isLoading || directSearchMutation.isLoading}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Streaming Progress */}
+      {(companySearchMutation.isLoading || directSearchMutation.isLoading) && streamingProgress && (
+        <div className="card-neon p-6 animate-slide-in relative z-10">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold gradient-text">
+              🔥 Ricerca in corso...
+            </h3>
+            <div className="flex items-center gap-2">
+              <div className="spinner-neon w-4 h-4" />
+              <span className="text-sm text-gray-400">
+                {streamingProgress.tableIndex + 1} / {streamingProgress.totalTables}
+              </span>
+            </div>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-400">Tabella corrente:</span>
+              <span className="font-medium text-cyan-300">
+                {streamingProgress.currentTable}
+              </span>
+            </div>
+            
+            <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-cyan-500 to-purple-500 transition-all duration-500 animate-pulse"
+                style={{ 
+                  width: `${((streamingProgress.tableIndex + 1) / streamingProgress.totalTables) * 100}%` 
+                }}
+              />
+            </div>
+            
+            <p className="text-sm text-gray-400">{streamingStatus}</p>
+            <p className="text-sm font-medium gradient-text-green">
+              💎 Matches trovati: {totalMatches.toLocaleString()}
+            </p>
           </div>
         </div>
       )}
 
-      {/* Search Type Selection */}
-      <div className="card p-6">
-        <h2 className="text-xl font-semibold text-neutral-900 mb-4 flex items-center gap-2">
-          <Search className="h-5 w-5 text-primary-600" />
-          Modalità di Ricerca
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {searchTypes.map((type) => {
-            const Icon = type.icon;
-            const isActive = searchType === type.id;
-            return (
-              <button
-                key={type.id}
-                onClick={() => setSearchType(type.id as SearchType)}
-                className={`p-4 rounded-xl border-2 transition-all duration-200 text-left group ${
-                  isActive
-                    ? 'border-primary-300 bg-primary-50 shadow-colored'
-                    : 'border-neutral-200 hover:border-primary-200 hover:bg-primary-25'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center bg-gradient-to-br ${type.gradient} ${
-                    isActive ? 'shadow-md' : 'group-hover:shadow-md'
-                  } transition-all duration-200`}>
-                    <Icon className="h-5 w-5 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className={`font-semibold mb-1 ${
-                      isActive ? 'text-primary-900' : 'text-neutral-900'
-                    }`}>
-                      {type.name}
-                    </h3>
-                    <p className={`text-sm ${
-                      isActive ? 'text-primary-700' : 'text-neutral-600'
-                    }`}>
-                      {type.description}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Search Components */}
-      {searchType === 'cig' ? (
-        <SearchByCIG
-          onSearch={handleCIGSearch}
-          isLoading={cigSearchMutation.isLoading}
-        />
-      ) : (
-        <div className="space-y-6">
-          {/* Search Method Toggle */}
-          <div className="card p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-semibold text-neutral-900 mb-1">
-                  Modalità di Ricerca Azienda
-                </h3>
-                <p className="text-sm text-neutral-600">
-                  {useDirectSearch ? 
-                    "🎯 Ricerca Diretta: veloce, focus su aggiudicatari_data" : 
-                    "🌊 Ricerca Completa: più lenta, cerca in tutte le tabelle"
-                  }
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleSearchModeChange(true)}
-                  className={`btn-sm ${
-                    useDirectSearch
-                      ? 'btn-primary'
-                      : 'btn-outline'
-                  }`}
-                >
-                  🎯 Diretta
-                </button>
-                <button
-                  onClick={() => handleSearchModeChange(false)}
-                  className={`btn-sm ${
-                    !useDirectSearch
-                      ? 'btn-primary'
-                      : 'btn-outline'
-                  }`}
-                >
-                  🌊 Completa
-                </button>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <div className="p-3 bg-primary-50 rounded-lg border border-primary-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="h-4 w-4 text-primary-600" />
-                  <span className="text-sm font-medium text-primary-900">Ricerca Diretta</span>
-                </div>
-                <p className="text-xs text-primary-700">
-                  Più veloce, cerca principalmente nella tabella aggiudicatari_data
-                </p>
+      {/* Search Results with Smart Categorization */}
+      {(searchResults || companyResults) && (
+        <div className="space-y-6 animate-slide-in relative z-10">
+          {/* CIG Results - Now with enhanced categorization */}
+          {searchResults && cigDataForTable.length > 0 && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold gradient-text flex items-center gap-3">
+                  🎯 Risultati CIG: {searchResults.cig}
+                  <span className="text-sm text-gray-400">({cigDataForTable.length} campi trovati)</span>
+                </h2>
+                
+                {activeCategory && (
+                  <button
+                    onClick={() => setActiveCategory(null)}
+                    className="btn-neon-secondary text-sm"
+                  >
+                    ✕ Mostra Tutti
+                  </button>
+                )}
               </div>
               
-              <div className="p-3 bg-accent-50 rounded-lg border border-accent-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <Database className="h-4 w-4 text-accent-600" />
-                  <span className="text-sm font-medium text-accent-900">Ricerca Completa</span>
-                </div>
-                <p className="text-xs text-accent-700">
-                  Più completa, cerca in tutte le tabelle disponibili
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <AdvancedSearch
-            onSearch={handleCompanySearch}
-            isLoading={useDirectSearch ? directSearchMutation.isLoading : companySearchMutation.isLoading}
-          />
-        </div>
-      )}
-
-      {/* Loading/Progress Indicators */}
-      {(cigSearchMutation.isLoading || companySearchMutation.isLoading || directSearchMutation.isLoading) && (
-        <div className="card p-6 border-primary-200 bg-primary-50">
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 text-primary-600 animate-spin" />
-            <h3 className="text-lg font-semibold text-primary-900">
-              {cigSearchMutation.isLoading && 'Ricerca CIG in corso...'}
-              {(companySearchMutation.isLoading || directSearchMutation.isLoading) && 'Ricerca Azienda in corso...'}
-            </h3>
-          </div>
-          {streamingStatus && (
-            <div className="mt-4 text-sm text-primary-700 font-medium flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>{streamingStatus}</span>
-            </div>
-          )}
-          {/* Detailed progress for streaming search */}
-          {companySearchMutation.isLoading && streamingProgress && (
-             <div className="space-y-3 mt-4">
-               <div className="flex justify-between text-sm text-primary-800">
-                 <span>
-                   Tabella: <strong>{streamingProgress.currentTable}</strong>
-                   {streamingProgress.is_priority && <span className="ml-2 badge-warning">PRIORITÀ</span>}
-                 </span>
-                 <span>{streamingProgress.tableIndex} / {streamingProgress.totalTables}</span>
-               </div>
-               <div className="w-full bg-primary-200 rounded-full h-2">
-                 <div 
-                   className={`h-2 rounded-full transition-all duration-300 ${streamingProgress.is_priority ? 'bg-warning-500' : 'bg-primary-600'}`}
-                   style={{ width: `${(streamingProgress.tableIndex / streamingProgress.totalTables) * 100}%` }}
-                 ></div>
-               </div>
-               <div className="text-sm text-primary-800">
-                 Risultati trovati: <strong className="text-primary-900">{totalMatches}</strong>
-               </div>
-             </div>
-          )}
-        </div>
-      )}
-
-      {/* Search Results */}
-      <div className="space-y-8 mt-8">
-        {searchResults && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-neutral-800">Risultati per CIG: {searchResults.cig}</h2>
-            
-            {cigDataForTable.length > 0 ? (
-              <SearchableTable 
-                title="Dati Unificati CIG"
-                data={cigDataForTable}
-                columns={[
-                  { key: 'campo', label: 'Campo' },
-                  { key: 'valore', label: 'Valore' },
-                  { key: 'fonte', label: 'Fonte' },
-                ]}
-              />
-            ) : (
-               <div className="card bg-base-100 shadow">
-                <div className="card-body">Nessun dato trovato per questo CIG.</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {companyResults && (
-           <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-neutral-800">Risultati per Azienda: {companyResults.company_name}</h2>
-            
-            {companyResults.aggiudicatari_summary && companyResults.aggiudicatari_summary.length > 0 && (
-              <SearchableTable 
-                title="Sommario Aggiudicatari"
-                data={companyResults.aggiudicatari_summary}
-              />
-            )}
-            
-            {companyResults.cig_details && companyResults.cig_details.length > 0 && (
-              <SearchableTable 
-                title="Dettagli CIG"
-                data={companyResults.cig_details}
-              />
-            )}
-
-            {companyResults.results_by_table && companyResults.results_by_table.map((tableResult: { data?: Record<string, any>[], table_name?: unknown, matches?: unknown }, index: number) => (
-              tableResult.data && tableResult.data.length > 0 &&
-              <SearchableTable
-                key={index}
-                title={`Risultati da: ${String(tableResult.table_name)} (${String(tableResult.matches)} trovati)`}
-                data={tableResult.data}
-              />
-            ))}
-            
-          </div>
-        )}
-      </div>
-
-      {/* Tables Section */}
-      <div className="pt-8 border-t border-neutral-200">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-8 h-8 bg-neutral-100 rounded-lg flex items-center justify-center">
-            <Database className="h-5 w-5 text-neutral-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-neutral-900">Tabelle Database</h2>
-        </div>
-        
-        {tablesLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="card p-6 animate-pulse">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-neutral-200 rounded-lg"></div>
-                  <div className="flex-1">
-                    <div className="h-4 bg-neutral-200 rounded mb-2"></div>
-                    <div className="h-3 bg-neutral-200 rounded w-3/4"></div>
+              {/* Quick Category Links */}
+              {quickLinks.length > 0 && (
+                <div className="card-neon p-4">
+                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    ⚡ Quick Links per Categoria
+                    <span className="text-sm text-gray-400 font-normal">
+                      Filtra i dati per tipo
+                    </span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {quickLinks.map((link) => (
+                      <button
+                        key={link.categoria}
+                        onClick={() => setActiveCategory(
+                          activeCategory === link.categoria ? null : link.categoria
+                        )}
+                        className={`group relative p-4 rounded-lg border transition-all duration-300 hover:scale-[1.02] ${
+                          activeCategory === link.categoria
+                            ? 'quick-link-active'
+                            : 'border-gray-600 hover:border-gray-500 bg-gray-800/50 quick-link-hover'
+                        }`}
+                        title={link.description}
+                      >
+                        <div className={`absolute inset-0 bg-gradient-to-r ${link.color} opacity-0 group-hover:opacity-10 rounded-lg transition-opacity duration-300`} />
+                        <div className="relative">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-2xl group-hover:scale-110 transition-transform duration-200">
+                              {link.icon}
+                            </span>
+                            <div className="flex-1 text-left">
+                              <span className="font-semibold text-white block">{link.label}</span>
+                              <span className="category-count">
+                                {link.count} campi
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-400 text-left group-hover:text-gray-300 transition-colors duration-200">
+                            {link.description}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
                   </div>
+                  
+                  {activeCategory && (
+                    <div className="mt-4 flex items-center justify-between p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <span className="text-cyan-400">🔍</span>
+                        <span className="text-white font-medium">
+                          Mostrando solo: {quickLinks.find(l => l.categoria === activeCategory)?.label}
+                        </span>
+                        <span className="category-count bg-cyan-500/20 text-cyan-300">
+                          {filteredCigData.length} di {cigDataForTable.length}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setActiveCategory(null)}
+                        className="text-cyan-400 hover:text-white transition-colors duration-200 text-sm"
+                      >
+                        ✕ Rimuovi Filtro
+                      </button>
+                    </div>
+                  )}
                 </div>
+              )}
+              
+              {/* Categorized Grid Display */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredCigData.map((item, index) => (
+                  <div
+                    key={`${item.campo}-${index}`}
+                    className="card-neon p-4 hover:scale-[1.02] transition-all duration-300 group"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl flex-shrink-0 group-hover:scale-110 transition-transform duration-200">
+                        {item.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="font-semibold text-white text-sm truncate group-hover:text-cyan-300 transition-colors duration-200">
+                            {item.campo}
+                          </h3>
+                          <span className={`${getBadgeClass(item.categoria)} text-xs ml-2 flex-shrink-0`}>
+                            {item.categoria}
+                          </span>
+                        </div>
+                        <p className={`text-sm mb-2 break-words value-${item.categoria} group-hover:scale-[1.01] transition-transform duration-200`}>
+                          {item.valore}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-gray-500">Fonte:</span>
+                          <span className="font-medium text-gray-400 group-hover:text-gray-300 transition-colors duration-200">
+                            {item.fonte}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Hover overlay effect */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-lg pointer-events-none" />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : tables && tables.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {tables.slice(0, 10).map((tableName, index) => (
+            </div>
+          )}
+
+          {/* Company Results */}
+          {companyResults && companyResults.results_by_table && (
+            <div className="space-y-6">
+              {companyResults.results_by_table.map((tableResult, index) => (
+                <div
+                  key={`${String(tableResult.table_name)}-${index}`}
+                  className="animate-slide-in"
+                  style={{ animationDelay: `${index * 100}ms` }}
+                >
+                  <SearchableTable
+                    data={Array.isArray(tableResult.data) ? tableResult.data : []}
+                    title={`🏢 ${getTableDisplayName(String(tableResult.table_name))} (${tableResult.matches} risultati)`}
+                    columns={
+                      Array.isArray(tableResult.data) && tableResult.data.length > 0
+                        ? Object.keys(tableResult.data[0]).map((key: string) => ({
+                            key,
+                            label: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                          }))
+                        : []
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tables Grid Neon */}
+      {!tablesLoading && tables && !searchResults && !companyResults && (
+        <div className="space-y-6 relative z-10">
+          <h2 className="text-3xl font-bold gradient-text mb-6 flex items-center gap-3">
+            <Table className="h-8 w-8 text-purple-400" />
+            Database Disponibili
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {tables.map((table, index) => (
               <Link
-                to={`/table/${tableName}`}
-                key={tableName}
-                className="group block p-4 bg-white rounded-xl border border-neutral-200 hover:border-primary-300 hover:bg-primary-50/50 transition-all duration-200 transform hover:-translate-y-1 hover:shadow-lg"
-                style={{ animationDelay: `${index * 50}ms` }}
+                key={table}
+                to={`/table/${table}`}
+                className="card-neon p-6 hover:scale-105 transition-all duration-300 group animate-slide-in"
+                style={{ animationDelay: `${index * 100}ms` }}
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="w-10 h-10 bg-neutral-100 rounded-lg flex items-center justify-center group-hover:bg-primary-100 transition-colors duration-200">
-                      <Table className="h-5 w-5 text-neutral-600 group-hover:text-primary-600" />
+                  <div className="flex items-center gap-4">
+                    <div className="text-3xl">
+                      {table.includes('aggiudicatari') ? '🏢' : 
+                       table.includes('cig') ? '🆔' : 
+                       table.includes('lotti') ? '📦' : 
+                       table.includes('partecipanti') ? '👥' : '🗃️'}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-neutral-900 group-hover:text-primary-900 transition-colors duration-200 truncate">
-                        {getTableDisplayName(tableName)}
+                    <div>
+                      <h3 className="text-lg font-bold text-white mb-1">
+                        {getTableDisplayName(table)}
                       </h3>
-                      <p className="text-sm text-neutral-600 group-hover:text-primary-700 transition-colors duration-200">
-                        Esplora i dati della tabella
-                      </p>
+                      <p className="text-gray-400 text-sm">{table}</p>
                     </div>
                   </div>
-                  <ArrowRight className="h-5 w-5 text-neutral-400 group-hover:text-primary-600 group-hover:translate-x-1 transition-all duration-200" />
+                  <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-cyan-400 group-hover:translate-x-2 transition-all duration-300" />
                 </div>
               </Link>
             ))}
           </div>
-        ) : (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Database className="h-8 w-8 text-neutral-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-neutral-900 mb-2">
-              Nessuna tabella trovata
-            </h3>
-            <p className="text-neutral-600">
-              Non sono state trovate tabelle nel database.
-            </p>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
