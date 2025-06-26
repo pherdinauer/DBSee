@@ -9,6 +9,11 @@ import {
   QueryResult,
   HealthCheck,
   CIGSearchResult,
+  CompanyResult,
+  CompanySearchStreamEvent,
+  DirectCompanySearchStreamEvent,
+  StreamFinalSummary,
+  StreamError,
 } from '@/types/api';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api/v1';
@@ -96,7 +101,7 @@ api.interceptors.response.use(
     } else if (error.response && error.response.status >= 500) {
       toast.error('Server error. Please try again later.');
     } else if (error.response?.data) {
-      const errorData = error.response.data as any;
+      const errorData = error.response.data as { detail?: string };
       toast.error(errorData.detail || 'An error occurred');
     } else if (error.request) {
       toast.error('Network error. Please check your connection and ensure the backend is running.');
@@ -186,7 +191,7 @@ export const searchAPI = {
     return response.data;
   },
 
-  searchByCompany: async (companyName: string): Promise<any> => {
+  searchByCompany: async (companyName: string): Promise<CompanyResult> => {
     console.log('Starting company search API call for:', companyName);
     console.log('Auth token present:', !!getToken());
     
@@ -200,7 +205,7 @@ export const searchAPI = {
       console.log('Request started at:', new Date().toISOString());
       
       console.log('About to send request...');
-      const response = await api.get<any>(url, {
+      const response = await api.get<CompanyResult>(url, {
         timeout: 30000, // 30 seconds timeout for company search (matching backend)
       });
       
@@ -212,21 +217,22 @@ export const searchAPI = {
       console.log('Response data keys:', Object.keys(response.data || {}));
       
       return response.data;
-    } catch (error: any) {
-      console.error('Company search API error:', error);
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      console.error('Company search API error:', axiosError);
       console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data
+        message: axiosError.message,
+        code: axiosError.code,
+        status: axiosError.response?.status,
+        statusText: axiosError.response?.statusText,
+        data: axiosError.response?.data
       });
-      throw error;
+      throw axiosError;
     }
   },
 
   // Direct company search - faster and more targeted
-  searchByCompanyDirect: async (companyName: string, yearFilter?: number): Promise<any> => {
+  searchByCompanyDirect: async (companyName: string, yearFilter?: number): Promise<CompanyResult> => {
     console.log('Starting DIRECT company search API call for:', companyName, 'year:', yearFilter);
     const params = new URLSearchParams({ company_name: companyName });
     if (yearFilter) {
@@ -234,10 +240,10 @@ export const searchAPI = {
     }
     
     try {
-      const response = await api.get<any>(`/search/company-direct?${params}`);
+      const response = await api.get<CompanyResult>(`/search/company-direct?${params}`);
       console.log('Direct company search response:', response.data);
       return response.data;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Direct company search API error:', error);
       throw error;
     }
@@ -247,15 +253,15 @@ export const searchAPI = {
   searchByCompanyDirectStream: async (
     companyName: string,
     yearFilter: number | undefined,
-    onProgress: (data: any) => void,
-    onComplete: (finalData: any) => void,
-    onError: (error: any) => void
+    onProgress: (data: DirectCompanySearchStreamEvent) => void,
+    onComplete: (finalData: StreamFinalSummary) => void,
+    onError: (error: StreamError) => void
   ): Promise<void> => {
     console.log('Starting DIRECT STREAMING company search API call for:', companyName, 'year:', yearFilter);
     const token = getToken();
     
     if (!token) {
-      onError({ message: 'No authentication token available' });
+      onError({ type: 'auth_required', message: 'No authentication token available' });
       return;
     }
     
@@ -271,7 +277,7 @@ export const searchAPI = {
       
       eventSource.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
+          const data = JSON.parse(event.data) as DirectCompanySearchStreamEvent;
           console.log('Received SSE data:', data);
           
           if (data.type === 'final_summary') {
@@ -285,14 +291,14 @@ export const searchAPI = {
           }
         } catch (parseError) {
           console.error('Error parsing SSE data:', parseError);
-          onError({ message: 'Error parsing server response' });
+          onError({ type: 'error', message: 'Error parsing server response' });
           eventSource.close();
         }
       };
       
-      eventSource.onerror = (error) => {
-        console.error('SSE connection error:', error);
-        onError({ message: 'Connection error during direct streaming search' });
+      eventSource.onerror = () => {
+        console.error('SSE connection error:');
+        onError({ type: 'error', message: 'Connection error during direct streaming search' });
         eventSource.close();
       };
       
@@ -301,13 +307,13 @@ export const searchAPI = {
         if (eventSource.readyState !== EventSource.CLOSED) {
           console.warn('Direct SSE timeout - closing connection');
           eventSource.close();
-          onError({ message: 'Direct search timeout' });
+          onError({ type: 'error', message: 'Direct search timeout' });
         }
       }, 300000);
       
-    } catch (error: any) {
+    } catch (error) {
       console.error('Direct streaming company search error:', error);
-      onError(error);
+      onError({ type: 'error', message: 'Failed to initiate direct streaming search' });
     }
   },
 
@@ -320,15 +326,15 @@ export const searchAPI = {
   searchByCompanyStream: async (
     companyName: string,
     yearFilter: number | undefined,
-    onProgress: (data: any) => void,
-    onComplete: (finalData: any) => void,
-    onError: (error: any) => void
+    onProgress: (data: CompanySearchStreamEvent) => void,
+    onComplete: (finalData: StreamFinalSummary) => void,
+    onError: (error: StreamError) => void
   ): Promise<void> => {
     console.log('Starting STREAMING company search API call for:', companyName, 'year:', yearFilter);
     const token = getToken();
     
     if (!token) {
-      onError({ message: 'No authentication token available' });
+      onError({ type: 'auth_required', message: 'No authentication token available' });
       return;
     }
     
@@ -344,7 +350,7 @@ export const searchAPI = {
       
       eventSource.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
+          const data = JSON.parse(event.data) as CompanySearchStreamEvent;
           console.log('Received SSE data:', data);
           
           if (data.type === 'final_summary') {
@@ -358,14 +364,14 @@ export const searchAPI = {
           }
         } catch (parseError) {
           console.error('Error parsing SSE data:', parseError);
-          onError({ message: 'Error parsing server response' });
+          onError({ type: 'error', message: 'Error parsing server response' });
           eventSource.close();
         }
       };
       
-      eventSource.onerror = (error) => {
-        console.error('SSE connection error:', error);
-        onError({ message: 'Connection error during streaming search' });
+      eventSource.onerror = () => {
+        console.error('SSE connection error:');
+        onError({ type: 'error', message: 'Connection error during streaming search' });
         eventSource.close();
       };
       
@@ -374,13 +380,13 @@ export const searchAPI = {
         if (eventSource.readyState !== EventSource.CLOSED) {
           console.warn('SSE timeout - closing connection');
           eventSource.close();
-          onError({ message: 'Search timeout' });
+          onError({ type: 'error', message: 'Search timeout' });
         }
       }, 120000);
       
-    } catch (error: any) {
+    } catch (error) {
       console.error('Streaming company search error:', error);
-      onError(error);
+      onError({ type: 'error', message: 'Failed to initiate streaming search' });
     }
   },
 };

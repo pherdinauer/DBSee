@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation } from 'react-query';
 import { 
@@ -7,39 +7,58 @@ import {
   ArrowRight, 
   Search, 
   Building2, 
-  Clock, 
-  CheckCircle, 
   Zap,
   BarChart3,
-  TrendingUp
+  TrendingUp,
+  Loader2
 } from 'lucide-react';
 import { tablesAPI, searchAPI } from '../services/api';
 import SearchByCIG from '../components/SearchByCIG';
-import SearchResultsDisplay from '../components/SearchResultsDisplay';
 import AdvancedSearch from '../components/AdvancedSearch';
-import CompanySearchResults from '../components/CompanySearchResults';
-import SimpleCompanyResults from '../components/SimpleCompanyResults';
+import SearchableTable from '../components/SearchableTable';
+import { 
+  CIGSearchResult, 
+  CompanyResult, 
+  CompanySearchStreamEvent, 
+  DirectCompanySearchStreamEvent,
+  StreamFinalSummary,
+  StreamError,
+  StreamTableResult
+} from '../types/api';
+
+interface StreamingProgress {
+  currentTable: string;
+  tableIndex: number;
+  totalTables: number;
+  is_priority: boolean;
+  priority_tables: number;
+}
+
+type SearchType = 'cig' | 'company';
 
 const DashboardPage = () => {
-  const [searchType, setSearchType] = useState<'cig' | 'company' | 'company-stream'>('cig');
-  const [searchResults, setSearchResults] = useState<any>(null);
-  const [companyResults, setCompanyResults] = useState<any>(null);
+  const [searchType, setSearchType] = useState<SearchType>('cig');
+  const [searchResults, setSearchResults] = useState<CIGSearchResult | null>(null);
+  const [companyResults, setCompanyResults] = useState<CompanyResult | null>(null);
   const [useDirectSearch, setUseDirectSearch] = useState<boolean>(true);
   
   // Streaming search state
-  const [streamingResults, setStreamingResults] = useState<any[]>([]);
-  const [streamingProgress, setStreamingProgress] = useState<{
-    currentTable: string;
-    tableIndex: number;
-    totalTables: number;
-    is_priority: boolean;
-    priority_tables: number;
-  } | null>(null);
+  const [streamingProgress, setStreamingProgress] = useState<StreamingProgress | null>(null);
   const [streamingStatus, setStreamingStatus] = useState<string>('');
   const [totalMatches, setTotalMatches] = useState(0);
   
-  // Direct search streaming state
-  const [directStreamingProgress, setDirectStreamingProgress] = useState<any[]>([]);
+  const cigDataForTable = useMemo(() => {
+    if (!searchResults?.found || !searchResults.merged_data) return [];
+    
+    return Object.entries(searchResults.merged_data)
+      .map(([key, value]) => ({
+        campo: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        valore: String(value ?? 'N/A'),
+        fonte: searchResults.field_sources?.[key] || 'Sconosciuto',
+      }))
+      .filter(item => item.valore && item.valore.toLowerCase() !== 'n/a' && item.valore.trim() !== '');
+
+  }, [searchResults]);
 
   const {
     data: tables,
@@ -56,24 +75,24 @@ const DashboardPage = () => {
   const companySearchMutation = useMutation(
     async (searchParams: { companyName: string; yearFilter?: number }) => {
       return new Promise((resolve, reject) => {
-        const allResults: any[] = [];
-        let finalData: any = null;
+        const allResults: StreamTableResult[] = [];
+        let finalData: CompanyResult | null = null;
 
-        const handleProgress = (data: any) => {
+        const handleProgress = (data: CompanySearchStreamEvent) => {
           console.log('Streaming progress:', data);
           
           if (data.type === 'table_result') {
             allResults.push(data);
             setTotalMatches((prev: number) => prev + data.matches);
             
-            const currentResults = {
+            const currentResults: CompanyResult = {
               company_name: searchParams.companyName,
-              year_filter: searchParams.yearFilter,
-              found: allResults.length > 0,
-              total_matches: allResults.reduce((sum, result) => sum + result.matches, 0),
-              tables_searched: allResults.length,
-              results_by_table: allResults,
-              search_timestamp: new Date().toISOString()
+              found: true,
+              results_by_table: allResults.map(r => ({
+                table_name: r.table_name,
+                matches: r.matches,
+                data: r.data,
+              })),
             };
             
             setCompanyResults(currentResults);
@@ -86,7 +105,7 @@ const DashboardPage = () => {
               tableIndex: data.table_index,
               totalTables: data.total_tables,
               is_priority: data.is_priority,
-              priority_tables: data.priority_tables
+              priority_tables: data.priority_tables ?? 0
             });
           }
           
@@ -95,16 +114,21 @@ const DashboardPage = () => {
           }
         };
 
-        const handleComplete = (data: any) => {
+        const handleComplete = (data: StreamFinalSummary) => {
           console.log('Streaming completed:', data);
           finalData = {
+            ...companyResults,
             company_name: data.company_name,
             year_filter: data.year_filter,
             found: data.found,
             total_matches: data.total_matches,
             tables_searched: data.tables_searched,
-            results_by_table: allResults,
-            search_timestamp: data.search_timestamp
+            search_timestamp: data.search_timestamp,
+            results_by_table: allResults.map(r => ({
+                table_name: r.table_name,
+                matches: r.matches,
+                data: r.data,
+            })),
           };
           
           setCompanyResults(finalData);
@@ -112,12 +136,12 @@ const DashboardPage = () => {
           resolve(finalData);
         };
 
-        const handleError = (error: any) => {
+        const handleError = (error: StreamError) => {
           console.error('Streaming error:', error);
+          setStreamingStatus(`Errore: ${error.message || 'Errore sconosciuto'}`);
           reject(error);
         };
 
-        setStreamingResults([]);
         setStreamingProgress(null);
         setStreamingStatus('Avvio ricerca...');
         setTotalMatches(0);
@@ -138,7 +162,7 @@ const DashboardPage = () => {
         console.log('Company search completed:', data);
         setStreamingStatus('Ricerca completata!');
       },
-      onError: (error: any) => {
+      onError: (error: Error) => {
         console.error('Company search error:', error);
         setStreamingStatus(`Errore: ${error.message || 'Errore sconosciuto'}`);
       },
@@ -160,13 +184,11 @@ const DashboardPage = () => {
   // Direct search mutation with streaming
   const directSearchMutation = useMutation(
     async (searchParams: { companyName: string; yearFilter?: number }) => {
-      setDirectStreamingProgress([]);
       setStreamingStatus('Inizializzazione ricerca diretta...');
       
       return new Promise((resolve, reject) => {
-        const handleProgress = (data: any) => {
+        const handleProgress = (data: DirectCompanySearchStreamEvent) => {
           console.log('Direct streaming progress:', data);
-          setDirectStreamingProgress((prev: any[]) => [...prev, data]);
           
           if (data.type === 'search_started') {
             setStreamingStatus(`🎯 Ricerca diretta avviata per: ${data.company_name}`);
@@ -188,8 +210,8 @@ const DashboardPage = () => {
           } else if (data.type === 'cig_progress') {
             setStreamingStatus(data.message);
           } else if (data.type === 'cig_detail') {
-            setCompanyResults((prev: any) => {
-              if (!prev) return prev;
+            setCompanyResults((prev) => {
+              if (!prev) return null;
               return {
                 ...prev,
                 cig_details: [...(prev.cig_details || []), data.data]
@@ -198,18 +220,21 @@ const DashboardPage = () => {
           }
         };
 
-        const handleComplete = (data: any) => {
+        const handleComplete = (data: StreamFinalSummary) => {
           console.log('Direct search completed:', data);
-          setCompanyResults((prev: any) => ({
-            ...prev,
-            ...data,
-            streaming: false
-          }));
+          setCompanyResults((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              ...data,
+              streaming: false
+            }
+          });
           setStreamingStatus('Ricerca diretta completata!');
           resolve(data);
         };
 
-        const handleError = (error: any) => {
+        const handleError = (error: StreamError) => {
           console.error('Direct search error:', error);
           setStreamingStatus(`Errore: ${error.message || 'Errore sconosciuto'}`);
           reject(error);
@@ -228,18 +253,24 @@ const DashboardPage = () => {
       onSuccess: (data) => {
         console.log('Direct search completed:', data);
       },
-      onError: (error: any) => {
+      onError: (error: Error) => {
         console.error('Direct search error:', error);
       },
     }
   );
 
-  const getTableDisplayName = (tableName: string): string => {
-    return tableName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  // Reset results when changing search mode
+  const handleSearchModeChange = (isDirect: boolean) => {
+    setUseDirectSearch(isDirect);
+    setSearchResults(null);
+    setCompanyResults(null);
+    setStreamingProgress(null);
+    setStreamingStatus('');
+    setTotalMatches(0);
   };
 
-  const getTableIcon = (tableName: string) => {
-    return <Table className="h-4 w-4" />;
+  const getTableDisplayName = (tableName: string): string => {
+    return tableName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
   const searchTypes = [
@@ -329,7 +360,7 @@ const DashboardPage = () => {
             return (
               <button
                 key={type.id}
-                onClick={() => setSearchType(type.id as any)}
+                onClick={() => setSearchType(type.id as SearchType)}
                 className={`p-4 rounded-xl border-2 transition-all duration-200 text-left group ${
                   isActive
                     ? 'border-primary-300 bg-primary-50 shadow-colored'
@@ -385,7 +416,7 @@ const DashboardPage = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setUseDirectSearch(true)}
+                  onClick={() => handleSearchModeChange(true)}
                   className={`btn-sm ${
                     useDirectSearch
                       ? 'btn-primary'
@@ -395,7 +426,7 @@ const DashboardPage = () => {
                   🎯 Diretta
                 </button>
                 <button
-                  onClick={() => setUseDirectSearch(false)}
+                  onClick={() => handleSearchModeChange(false)}
                   className={`btn-sm ${
                     !useDirectSearch
                       ? 'btn-primary'
@@ -437,101 +468,100 @@ const DashboardPage = () => {
         </div>
       )}
 
-      {/* Streaming Progress Display */}
-      {(companySearchMutation.isLoading || directSearchMutation.isLoading) && (streamingProgress || directStreamingProgress.length > 0) && (
+      {/* Loading/Progress Indicators */}
+      {(cigSearchMutation.isLoading || companySearchMutation.isLoading || directSearchMutation.isLoading) && (
         <div className="card p-6 border-primary-200 bg-primary-50">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <Clock className="h-4 w-4 text-white animate-spin" />
-            </div>
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 text-primary-600 animate-spin" />
             <h3 className="text-lg font-semibold text-primary-900">
-              {directSearchMutation.isLoading ? 'Ricerca Diretta in Corso 🎯' : 'Ricerca Completa in Corso 🌊'}
+              {cigSearchMutation.isLoading && 'Ricerca CIG in corso...'}
+              {(companySearchMutation.isLoading || directSearchMutation.isLoading) && 'Ricerca Azienda in corso...'}
             </h3>
           </div>
-          
-          <div className="space-y-4">
-            <div className="text-sm text-primary-700 font-medium">{streamingStatus}</div>
-            
-            {companyResults?.year_filter && (
-              <div className="alert-info">
-                🗓️ Filtro anno attivo: <strong>{companyResults.year_filter}</strong>
-              </div>
-            )}
-            
-            {streamingProgress && (
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm text-primary-800">
-                  <span>
-                    Tabella corrente: <strong>{streamingProgress.currentTable}</strong>
-                    {streamingProgress.is_priority && (
-                      <span className="ml-2 badge-warning">PRIORITÀ</span>
-                    )}
-                  </span>
-                  <span>{streamingProgress.tableIndex} / {streamingProgress.totalTables}</span>
-                </div>
-                <div className="w-full bg-primary-200 rounded-full h-2">
-                  <div 
-                    className={`h-2 rounded-full transition-all duration-300 ${
-                      streamingProgress.is_priority ? 'bg-warning-500' : 'bg-primary-600'
-                    }`}
-                    style={{ width: `${(streamingProgress.tableIndex / streamingProgress.totalTables) * 100}%` }}
-                  ></div>
-                </div>
-                
-                {streamingProgress.priority_tables && (
-                  <div className="text-xs text-primary-600">
-                    Tabelle prioritarie: {Math.min(streamingProgress.tableIndex, streamingProgress.priority_tables)} / {streamingProgress.priority_tables}
-                  </div>
-                )}
-              </div>
-            )}
-            
-            <div className="text-sm text-primary-800">
-              Risultati trovati finora: <strong className="text-primary-900">{totalMatches}</strong>
+          {streamingStatus && (
+            <div className="mt-4 text-sm text-primary-700 font-medium flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{streamingStatus}</span>
             </div>
-
-            {streamingResults.length > 0 && (
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-primary-900 mb-3">Tabelle con risultati:</h4>
-                <div className="flex flex-wrap gap-2">
-                  {streamingResults.map((result, index) => (
-                    <span 
-                      key={index}
-                      className="badge-success flex items-center gap-1"
-                    >
-                      <CheckCircle className="h-3 w-3" />
-                      {result.table_name} ({result.matches})
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          )}
+          {/* Detailed progress for streaming search */}
+          {companySearchMutation.isLoading && streamingProgress && (
+             <div className="space-y-3 mt-4">
+               <div className="flex justify-between text-sm text-primary-800">
+                 <span>
+                   Tabella: <strong>{streamingProgress.currentTable}</strong>
+                   {streamingProgress.is_priority && <span className="ml-2 badge-warning">PRIORITÀ</span>}
+                 </span>
+                 <span>{streamingProgress.tableIndex} / {streamingProgress.totalTables}</span>
+               </div>
+               <div className="w-full bg-primary-200 rounded-full h-2">
+                 <div 
+                   className={`h-2 rounded-full transition-all duration-300 ${streamingProgress.is_priority ? 'bg-warning-500' : 'bg-primary-600'}`}
+                   style={{ width: `${(streamingProgress.tableIndex / streamingProgress.totalTables) * 100}%` }}
+                 ></div>
+               </div>
+               <div className="text-sm text-primary-800">
+                 Risultati trovati: <strong className="text-primary-900">{totalMatches}</strong>
+               </div>
+             </div>
+          )}
         </div>
       )}
 
       {/* Search Results */}
-      {searchResults && (
-        <SearchResultsDisplay
-          results={searchResults}
-          getTableDisplayName={getTableDisplayName}
-          getTableIcon={getTableIcon}
-        />
-      )}
+      <div className="space-y-8 mt-8">
+        {searchResults && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-neutral-800">Risultati per CIG: {searchResults.cig}</h2>
+            
+            {cigDataForTable.length > 0 ? (
+              <SearchableTable 
+                title="Dati Unificati CIG"
+                data={cigDataForTable}
+                columns={[
+                  { key: 'campo', label: 'Campo' },
+                  { key: 'valore', label: 'Valore' },
+                  { key: 'fonte', label: 'Fonte' },
+                ]}
+              />
+            ) : (
+               <div className="card bg-base-100 shadow">
+                <div className="card-body">Nessun dato trovato per questo CIG.</div>
+              </div>
+            )}
+          </div>
+        )}
 
-      {companyResults && (
-        <div className="space-y-6">
-          <SimpleCompanyResults 
-            results={companyResults} 
-            onCigSearch={handleCIGSearch}
-          />
-          <CompanySearchResults
-            results={companyResults}
-            getTableDisplayName={getTableDisplayName}
-            getTableIcon={getTableIcon}
-          />
-        </div>
-      )}
+        {companyResults && (
+           <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-neutral-800">Risultati per Azienda: {companyResults.company_name}</h2>
+            
+            {companyResults.aggiudicatari_summary && companyResults.aggiudicatari_summary.length > 0 && (
+              <SearchableTable 
+                title="Sommario Aggiudicatari"
+                data={companyResults.aggiudicatari_summary}
+              />
+            )}
+            
+            {companyResults.cig_details && companyResults.cig_details.length > 0 && (
+              <SearchableTable 
+                title="Dettagli CIG"
+                data={companyResults.cig_details}
+              />
+            )}
+
+            {companyResults.results_by_table && companyResults.results_by_table.map((tableResult: { data?: Record<string, any>[], table_name?: unknown, matches?: unknown }, index: number) => (
+              tableResult.data && tableResult.data.length > 0 &&
+              <SearchableTable
+                key={index}
+                title={`Risultati da: ${String(tableResult.table_name)} (${String(tableResult.matches)} trovati)`}
+                data={tableResult.data}
+              />
+            ))}
+            
+          </div>
+        )}
+      </div>
 
       {/* Tables Section */}
       <div className="pt-8 border-t border-neutral-200">
@@ -557,12 +587,12 @@ const DashboardPage = () => {
             ))}
           </div>
         ) : tables && tables.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {tables.map((tableName, index) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {tables.slice(0, 10).map((tableName, index) => (
               <Link
-                key={tableName}
                 to={`/table/${tableName}`}
-                className="card-interactive p-6 animate-slide-up"
+                key={tableName}
+                className="group block p-4 bg-white rounded-xl border border-neutral-200 hover:border-primary-300 hover:bg-primary-50/50 transition-all duration-200 transform hover:-translate-y-1 hover:shadow-lg"
                 style={{ animationDelay: `${index * 50}ms` }}
               >
                 <div className="flex items-center justify-between">
@@ -585,7 +615,7 @@ const DashboardPage = () => {
             ))}
           </div>
         ) : (
-          <div className="text-center py-12">
+          <div className="text-center py-8">
             <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Database className="h-8 w-8 text-neutral-400" />
             </div>

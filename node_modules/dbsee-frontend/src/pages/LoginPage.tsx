@@ -20,7 +20,7 @@ const LoginPage = () => {
       queryClient.refetchQueries('currentUser');
       // Small delay to ensure token is properly set
       setTimeout(() => {
-        navigate('/');
+      navigate('/');
       }, 100);
     },
     onError: () => {
@@ -91,7 +91,7 @@ const LoginPage = () => {
                   <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Icon className="h-5 w-5 text-primary-600" />
                   </div>
-                  <div>
+        <div>
                     <h3 className="font-semibold text-neutral-900 mb-1">
                       {feature.title}
                     </h3>
@@ -126,11 +126,11 @@ const LoginPage = () => {
           <div className="hidden lg:block text-center mb-8">
             <h2 className="text-3xl font-bold text-neutral-900 mb-2">
               Accedi al tuo account
-            </h2>
+          </h2>
             <p className="text-neutral-600">
               Inserisci le tue credenziali per continuare
-            </p>
-          </div>
+          </p>
+        </div>
 
           {/* Form di login */}
           <div className="card p-8 animate-scale-in">
@@ -138,64 +138,64 @@ const LoginPage = () => {
               <div className="form-group">
                 <label htmlFor="username" className="form-label">
                   Nome utente
-                </label>
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  required
-                  className="input"
+              </label>
+              <input
+                id="username"
+                name="username"
+                type="text"
+                required
+                className="input"
                   placeholder="Inserisci il tuo username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                   autoComplete="username"
-                />
-              </div>
+              />
+            </div>
 
               <div className="form-group">
                 <label htmlFor="password" className="form-label">
-                  Password
-                </label>
+                Password
+              </label>
                 <div className="relative">
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    required
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                required
                     className="input pr-12"
                     placeholder="Inserisci la tua password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                     autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-neutral-400 hover:text-neutral-600 transition-colors duration-200"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-5 w-5" />
-                    ) : (
-                      <Eye className="h-5 w-5" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
+              />
               <button
-                type="submit"
-                disabled={loginMutation.isLoading}
-                className="btn-primary w-full btn-lg"
+                type="button"
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-neutral-400 hover:text-neutral-600 transition-colors duration-200"
+                onClick={() => setShowPassword(!showPassword)}
               >
-                {loginMutation.isLoading ? (
+                {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                ) : (
+                      <Eye className="h-5 w-5" />
+                )}
+              </button>
+            </div>
+          </div>
+
+            <button
+              type="submit"
+              disabled={loginMutation.isLoading}
+                className="btn-primary w-full btn-lg"
+            >
+              {loginMutation.isLoading ? (
                   <div className="flex items-center justify-center gap-2">
                     <div className="spinner w-4 h-4" />
                     Accesso in corso...
-                  </div>
-                ) : (
+                </div>
+              ) : (
                   'Accedi'
-                )}
-              </button>
+              )}
+            </button>
             </form>
           </div>
 

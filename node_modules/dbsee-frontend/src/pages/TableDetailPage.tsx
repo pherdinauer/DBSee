@@ -1,15 +1,13 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
-import { ArrowLeft, Search, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Table } from 'lucide-react';
 import { tablesAPI } from '../services/api';
-import DataTable from '../components/DataTable';
+import SearchableTable from '../components/SearchableTable';
+import { ColumnInfo } from '../types/api';
 
 const TableDetailPage = () => {
   const { tableName } = useParams<{ tableName: string }>();
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
 
   const {
     data: schema,
@@ -29,19 +27,35 @@ const TableDetailPage = () => {
     error: dataError,
     refetch,
   } = useQuery(
-    ['tableData', tableName, page, pageSize, search],
-    () => tablesAPI.getTableData(tableName!, page, pageSize, search),
+    // Note: SearchableTable handles filtering client-side for now.
+    // For server-side search, we would pass the search term here.
+    ['tableData', tableName],
+    () => tablesAPI.getTableData(tableName!, 1, 1000, ''), // Fetching up to 1000 rows for client-side search/pagination
     {
       enabled: !!tableName,
       keepPreviousData: true,
     }
   );
+  
+  const columns = useMemo(() => {
+    if (!schema?.columns) return [];
+    return schema.columns.map((col: ColumnInfo) => ({
+      key: col.name,
+      label: col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+    }));
+  }, [schema]);
 
   if (!tableName) {
-    return <div>Table name not provided</div>;
+    return (
+       <div className="alert alert-error">
+        <div className="flex-1">
+          <label>Table name not provided in URL.</label>
+        </div>
+      </div>
+    );
   }
 
-  if (isLoadingSchema || isLoadingData) {
+  if (isLoadingSchema) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
@@ -50,81 +64,64 @@ const TableDetailPage = () => {
   }
 
   if (schemaError || dataError) {
+    const error = schemaError || dataError;
     return (
-      <div className="text-center py-12">
-        <div className="text-red-500 text-lg">Error loading table data</div>
+      <div className="alert alert-error">
+        <div className="flex-1">
+          <label>Error loading table data:</label>
+          <pre className="text-sm whitespace-pre-wrap">{String(error)}</pre>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center space-x-4">
-          <Link
-            to="/"
-            className="inline-flex items-center text-primary-600 hover:text-primary-700"
-          >
-            <ArrowLeft className="h-5 w-5 mr-1" />
-            Back to Tables
-          </Link>
+           <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center">
+            <Table className="h-6 w-6 text-primary-600" />
+          </div>
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{tableName}</h1>
             <p className="text-gray-600">
-              {tableData?.pagination.total_items || 0} rows
+              Visualizzazione di {tableData?.data.length || 0} di {tableData?.pagination.total_items || 0} righe
             </p>
           </div>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="btn-secondary"
-          disabled={isLoadingData}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingData ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="flex items-center space-x-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search..."
-            className="input pl-10"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-          />
+        <div className="flex items-center gap-2">
+            <Link
+                to="/"
+                className="btn btn-outline"
+            >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Torna al Dashboard
+            </Link>
+            <button
+            onClick={() => refetch()}
+            className="btn btn-primary"
+            disabled={isLoadingData}
+            >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingData ? 'animate-spin' : ''}`} />
+            Refresh
+            </button>
         </div>
-        <select
-          value={pageSize}
-          onChange={(e) => {
-            setPageSize(Number(e.target.value));
-            setPage(1);
-          }}
-          className="input w-24"
-        >
-          <option value={10}>10</option>
-          <option value={20}>20</option>
-          <option value={50}>50</option>
-          <option value={100}>100</option>
-        </select>
       </div>
 
       {/* Data Table */}
-      {tableData && schema && (
-        <DataTable
+      {tableData && schema ? (
+        <SearchableTable 
+          title={`Dati da ${tableName}`}
           data={tableData.data}
-          columns={schema.columns}
-          pagination={tableData.pagination}
-          onPageChange={setPage}
-          isLoading={isLoadingData}
+          columns={columns}
+          // The pagination logic needs to be connected if we want server-side pagination
+          // For now, SearchableTable handles pagination client-side based on the data it receives.
         />
+      ) : (
+        <div className="text-center py-12 text-gray-500">
+            Caricamento dati...
+        </div>
       )}
     </div>
   );

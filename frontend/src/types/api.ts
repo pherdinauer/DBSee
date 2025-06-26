@@ -103,4 +103,108 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: ErrorResponse;
   status: number;
-} 
+}
+
+export interface CompanyResult {
+  company_name: string;
+  found: boolean;
+  results_by_table?: Array<Record<string, unknown>>;
+  aggiudicatari_matches?: number;
+  aggiudicatari_summary?: Array<Record<string, unknown>>;
+  cig_details?: Array<Record<string, unknown>>;
+  year_filter?: number;
+  total_matches?: number;
+  streaming?: boolean;
+  current_table?: string;
+  progress?: {
+    current: number;
+    total: number;
+  };
+  search_time?: number;
+  [key: string]: unknown;
+}
+
+// Types for Streaming API responses
+export interface StreamProgress {
+  type: 'progress';
+  current_table: string;
+  table_index: number;
+  total_tables: number;
+  is_priority: boolean;
+  priority_tables?: number;
+}
+
+export interface StreamTableResult {
+  type: 'table_result';
+  table_name: string;
+  matches: number;
+  data: Record<string, any>[];
+}
+
+export interface StreamStatus {
+  type: 'status';
+  message: string;
+}
+
+export interface StreamFinalSummary {
+  type: 'final_summary';
+  company_name: string;
+  year_filter?: number;
+  found: boolean;
+  total_matches: number;
+  tables_searched: number;
+  search_timestamp: string;
+}
+
+export interface StreamError {
+  type: 'error' | 'auth_error' | 'auth_required';
+  message: string;
+  detail?: string;
+}
+
+export type CompanySearchStreamEvent = 
+  | StreamProgress 
+  | StreamTableResult 
+  | StreamStatus 
+  | StreamFinalSummary
+  | StreamError;
+
+// Types for Direct Streaming API responses
+export interface DirectStreamSearchStarted {
+  type: 'search_started';
+  company_name: string;
+  year_filter?: number;
+}
+
+export interface DirectStreamProgress {
+    type: 'progress';
+    message: string;
+}
+
+export interface DirectStreamAggiudicatariResult {
+  type: 'aggiudicatari_results';
+  matches_found: number;
+  search_time: number;
+  data: Record<string, any>[];
+}
+
+export interface DirectStreamCigProgress {
+  type: 'cig_progress';
+  message: string;
+  processed: number;
+  total: number;
+}
+
+export interface DirectStreamCigDetail {
+  type: 'cig_detail';
+  data: Record<string, any>;
+}
+
+export type DirectCompanySearchStreamEvent = 
+  | DirectStreamSearchStarted
+  | DirectStreamProgress
+  | DirectStreamAggiudicatariResult
+  | DirectStreamCigProgress
+  | DirectStreamCigDetail
+  | StreamFinalSummary // Can also send final summary
+  | StreamError;      // Can also send error 
