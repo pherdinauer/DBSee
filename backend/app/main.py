@@ -41,17 +41,25 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=True,
+    allow_origins=["*"],  # Temporarily allow all origins for debugging
+    allow_credentials=False,  # Must be False with wildcard origins
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Log CORS configuration
+logger.info(f"🔧 CORS configured with wildcard for debugging")
+logger.info(f"🔗 Original detected origins were: {settings.allowed_origins}")
+
 # Trusted host middleware
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=settings.allowed_hosts
+    allowed_hosts=["*"]  # Temporarily allow all hosts for debugging
 )
+
+# Log trusted hosts configuration
+logger.info(f"🔧 TrustedHost configured with wildcard for debugging")
+logger.info(f"🌐 Original detected hosts were: {settings.allowed_hosts}")
 
 
 # Request timing middleware
