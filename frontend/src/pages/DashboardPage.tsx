@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation } from 'react-query';
 import { 
@@ -9,7 +10,12 @@ import {
   Building2, 
   Zap,
   BarChart3,
-  TrendingUp
+  TrendingUp,
+  FileSpreadsheet,
+  X,
+  Filter,
+  Expand,
+  Minimize
 } from 'lucide-react';
 import { tablesAPI, searchAPI } from '../services/api';
 import SearchByCIG from '../components/SearchByCIG';
@@ -51,6 +57,8 @@ const DashboardPage = () => {
   const [sortBy, setSortBy] = useState<'campo' | 'categoria' | 'fonte'>('categoria');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [compactView, setCompactView] = useState(false);
+  const [cigTableFilter, setCigTableFilter] = useState('');
+  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
   
   // Streaming search state
   const [streamingProgress, setStreamingProgress] = useState<StreamingProgress | null>(null);
@@ -91,6 +99,16 @@ const DashboardPage = () => {
       ? cigDataForTable.filter(item => item.categoria === activeCategory)
       : cigDataForTable;
     
+    // Apply text filter
+    if (cigTableFilter) {
+      filtered = filtered.filter(item =>
+        item.campo.toLowerCase().includes(cigTableFilter.toLowerCase()) ||
+        item.valore.toLowerCase().includes(cigTableFilter.toLowerCase()) ||
+        item.fonte.toLowerCase().includes(cigTableFilter.toLowerCase()) ||
+        item.categoria.toLowerCase().includes(cigTableFilter.toLowerCase())
+      );
+    }
+    
     // Apply sorting
     filtered = [...filtered].sort((a, b) => {
       let aValue = a[sortBy];
@@ -108,7 +126,7 @@ const DashboardPage = () => {
     });
     
     return filtered;
-  }, [cigDataForTable, activeCategory, sortBy, sortOrder]);
+  }, [cigDataForTable, activeCategory, sortBy, sortOrder, cigTableFilter]);
 
   const {
     data: tables,
@@ -306,6 +324,58 @@ const DashboardPage = () => {
   const getSortIcon = (column: 'campo' | 'categoria' | 'fonte') => {
     if (sortBy !== column) return '↕️';
     return sortOrder === 'asc' ? '↑' : '↓';
+  };
+
+  const toggleCellExpansion = (cellId: string) => {
+    const newExpandedCells = new Set(expandedCells);
+    if (newExpandedCells.has(cellId)) {
+      newExpandedCells.delete(cellId);
+    } else {
+      newExpandedCells.add(cellId);
+    }
+    setExpandedCells(newExpandedCells);
+  };
+
+  const shouldShowExpandButton = (value: string) => {
+    return value.length > 50;
+  };
+
+  const truncateText = (text: string, maxLength: number = 50) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+  };
+
+  const exportCigDataToXLSX = () => {
+    const exportData = filteredCigData.map((item, index) => ({
+      '#': index + 1,
+      '📋 Nome Campo': item.campo,
+      '📄 Parametro': item.valore,
+      '🗂️ Fonte': item.fonte,
+      '🏷️ Categoria': item.categoria
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    
+    const columnWidths = [
+      { wch: 5 },  // # column
+      { wch: 25 }, // Nome Campo
+      { wch: 30 }, // Parametro
+      { wch: 20 }, // Fonte
+      { wch: 15 }  // Categoria
+    ];
+    worksheet['!cols'] = columnWidths;
+
+    const titleRow = [`Risultati CIG: ${searchResults?.cig || 'N/A'}`];
+    const metadataRow = [`Exported on: ${new Date().toLocaleString('it-IT')}`];
+    const statsRow = [`Total records: ${cigDataForTable.length} | Filtered: ${filteredCigData.length}`];
+    
+    XLSX.utils.sheet_add_aoa(worksheet, [titleRow, metadataRow, statsRow], { origin: 'A1' });
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'CIG_Results');
+
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `DBSee_CIG_${searchResults?.cig || 'Results'}_${timestamp}.xlsx`;
+    XLSX.writeFile(workbook, filename);
   };
 
   return (
@@ -508,7 +578,37 @@ const DashboardPage = () => {
                     </h3>
                     
                     {/* Table Controls */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {/* Export Button */}
+                      <button
+                        onClick={exportCigDataToXLSX}
+                        className="btn-export-enhanced"
+                        title="Export to Excel"
+                      >
+                        <FileSpreadsheet className="h-4 w-4 group-hover:scale-110 transition-transform duration-300" />
+                        Export XLSX
+                      </button>
+
+                      {/* Search Input */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Cerca nella tabella..."
+                          className="search-input-enhanced text-white placeholder:text-gray-500 pl-10 w-64"
+                          value={cigTableFilter}
+                          onChange={(e) => setCigTableFilter(e.target.value)}
+                        />
+                        {cigTableFilter && (
+                          <button
+                            onClick={() => setCigTableFilter('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-400 transition-colors duration-300"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+
                       <button
                         onClick={() => setCompactView(!compactView)}
                         className={`btn-neon-secondary text-xs px-3 py-1 ${compactView ? 'opacity-100' : 'opacity-70'}`}
@@ -631,20 +731,62 @@ const DashboardPage = () => {
                           style={{ animationDelay: `${index * 30}ms` }}
                         >
                           <td>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-start gap-2">
                               <span className={`group-hover:scale-110 transition-transform duration-200 ${compactView ? 'text-base' : 'text-xl'}`}>
                                 {item.icon}
                               </span>
-                              <div>
-                                <div className={`font-medium text-white group-hover:text-cyan-300 transition-colors duration-200 ${compactView ? 'text-sm' : ''}`}>
-                                  {item.campo}
+                              <div className="flex-1">
+                                <div className="flex items-start gap-2">
+                                  <div className="flex-1">
+                                    <span 
+                                      className={`font-medium text-white group-hover:text-cyan-300 transition-colors duration-200 cursor-pointer hover:bg-gray-700/20 rounded px-2 py-1 transition-colors duration-200 ${compactView ? 'text-sm' : ''} ${expandedCells.has(`${index}-campo`) ? 'expanded-cell' : ''}`}
+                                      onClick={() => shouldShowExpandButton(item.campo) && toggleCellExpansion(`${index}-campo`)}
+                                      title={shouldShowExpandButton(item.campo) ? (expandedCells.has(`${index}-campo`) ? 'Clicca per ridurre' : 'Clicca per espandere') : undefined}
+                                    >
+                                      {expandedCells.has(`${index}-campo`) || !shouldShowExpandButton(item.campo) ? item.campo : truncateText(item.campo)}
+                                    </span>
+                                  </div>
+                                  {shouldShowExpandButton(item.campo) && (
+                                    <button
+                                      onClick={() => toggleCellExpansion(`${index}-campo`)}
+                                      className="flex-shrink-0 p-1 text-gray-400 hover:text-cyan-400 transition-colors duration-200"
+                                      title={expandedCells.has(`${index}-campo`) ? 'Riduci' : 'Espandi'}
+                                    >
+                                      {expandedCells.has(`${index}-campo`) ? (
+                                        <Minimize className="h-3 w-3" />
+                                      ) : (
+                                        <Expand className="h-3 w-3" />
+                                      )}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>
                           </td>
                           <td>
-                            <div className={`font-mono value-${item.categoria} group-hover:scale-[1.01] transition-transform duration-200 ${compactView ? 'text-xs' : 'text-sm'}`}>
-                              {item.valore}
+                            <div className="flex items-start gap-2">
+                              <div className="flex-1">
+                                <span 
+                                  className={`font-mono value-${item.categoria} group-hover:scale-[1.01] transition-transform duration-200 cursor-pointer hover:bg-gray-700/20 rounded px-2 py-1 transition-colors duration-200 ${compactView ? 'text-xs' : 'text-sm'} ${expandedCells.has(`${index}-valore`) ? 'expanded-cell' : ''}`}
+                                  onClick={() => shouldShowExpandButton(item.valore) && toggleCellExpansion(`${index}-valore`)}
+                                  title={shouldShowExpandButton(item.valore) ? (expandedCells.has(`${index}-valore`) ? 'Clicca per ridurre' : 'Clicca per espandere') : undefined}
+                                >
+                                  {expandedCells.has(`${index}-valore`) || !shouldShowExpandButton(item.valore) ? item.valore : truncateText(item.valore)}
+                                </span>
+                              </div>
+                              {shouldShowExpandButton(item.valore) && (
+                                <button
+                                  onClick={() => toggleCellExpansion(`${index}-valore`)}
+                                  className="flex-shrink-0 p-1 text-gray-400 hover:text-cyan-400 transition-colors duration-200"
+                                  title={expandedCells.has(`${index}-valore`) ? 'Riduci' : 'Espandi'}
+                                >
+                                  {expandedCells.has(`${index}-valore`) ? (
+                                    <Minimize className="h-3 w-3" />
+                                  ) : (
+                                    <Expand className="h-3 w-3" />
+                                  )}
+                                </button>
+                              )}
                             </div>
                           </td>
                           <td>
@@ -672,7 +814,12 @@ const DashboardPage = () => {
                       </span>
                       {activeCategory && (
                         <span className="text-cyan-400">
-                          • Filtrato per: <span className="font-medium">{quickLinks.find(l => l.categoria === activeCategory)?.label}</span>
+                          • Categoria: <span className="font-medium">{quickLinks.find(l => l.categoria === activeCategory)?.label}</span>
+                        </span>
+                      )}
+                      {cigTableFilter && (
+                        <span className="text-purple-400">
+                          • Ricerca: <span className="font-medium">"{cigTableFilter}"</span>
                         </span>
                       )}
                     </div>

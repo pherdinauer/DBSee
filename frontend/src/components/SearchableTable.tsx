@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Filter, X, FileSpreadsheet } from 'lucide-react';
+import { Search, Filter, X, FileSpreadsheet, Expand, Minimize } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getBadgeClass, type CIGRecord } from '../utils/mockData';
 
@@ -180,6 +180,7 @@ const SearchableTable = <T extends Record<string, unknown>>({
   const [filter, setFilter] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CIGRecord['categoria'] | 'all'>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
 
   const tableColumns = useMemo(() => columns || getColumnsFromData(data), [columns, data]);
 
@@ -283,6 +284,25 @@ const SearchableTable = <T extends Record<string, unknown>>({
   const clearFilters = () => {
     setFilter('');
     setSelectedCategory('all');
+  };
+
+  const toggleCellExpansion = (cellId: string) => {
+    const newExpandedCells = new Set(expandedCells);
+    if (newExpandedCells.has(cellId)) {
+      newExpandedCells.delete(cellId);
+    } else {
+      newExpandedCells.add(cellId);
+    }
+    setExpandedCells(newExpandedCells);
+  };
+
+  const shouldShowExpandButton = (value: string) => {
+    return value.length > 50; // Show expand button for text longer than 50 characters
+  };
+
+  const truncateText = (text: string, maxLength: number = 50) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
   };
 
   if (!data || data.length === 0) {
@@ -448,15 +468,38 @@ const SearchableTable = <T extends Record<string, unknown>>({
                 {tableColumns.map(col => {
                   const value = row[col.key];
                   const formattedData = formatValue(value, String(col.key));
+                  const cellId = `${rowIndex}-${String(col.key)}`;
+                  const isExpanded = expandedCells.has(cellId);
+                  const displayValue = typeof value === 'boolean' 
+                    ? (value ? '✅ Sì' : '❌ No')
+                    : formattedData.formatted;
+                  const showExpandButton = shouldShowExpandButton(displayValue);
                   
                   return (
-                    <td key={`${rowIndex}-${String(col.key)}`} className="p-4">
-                      <div className="flex items-center gap-2">
-                        <span className={`${formattedData.cssClass} table-cell-value`}>
-                          {typeof value === 'boolean' 
-                            ? (value ? '✅ Sì' : '❌ No')
-                            : formattedData.formatted}
-                        </span>
+                    <td key={cellId} className="p-4">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <span 
+                            className={`${formattedData.cssClass} table-cell-value cursor-pointer hover:bg-gray-700/20 rounded px-2 py-1 transition-colors duration-200 ${isExpanded ? 'expanded-cell' : ''}`}
+                            onClick={() => showExpandButton && toggleCellExpansion(cellId)}
+                            title={showExpandButton ? (isExpanded ? 'Clicca per ridurre' : 'Clicca per espandere') : undefined}
+                          >
+                            {isExpanded || !showExpandButton ? displayValue : truncateText(displayValue)}
+                          </span>
+                        </div>
+                        {showExpandButton && (
+                          <button
+                            onClick={() => toggleCellExpansion(cellId)}
+                            className="flex-shrink-0 p-1 text-gray-400 hover:text-cyan-400 transition-colors duration-200"
+                            title={isExpanded ? 'Riduci' : 'Espandi'}
+                          >
+                            {isExpanded ? (
+                              <Minimize className="h-3 w-3" />
+                            ) : (
+                              <Expand className="h-3 w-3" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                   );
