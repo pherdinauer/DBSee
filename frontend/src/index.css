@@ -801,4 +801,115 @@
 .value-procedura {
   @apply text-teal-300;
   text-shadow: 0 0 5px rgba(20, 184, 166, 0.3);
+}
+
+/* Enhanced Table Styling for CIG Data */
+.cig-data-table {
+  background: rgba(17, 24, 39, 0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  border-radius: 12px;
+}
+
+.cig-data-table thead th {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(139, 92, 246, 0.1));
+  border-bottom: 2px solid rgba(6, 182, 212, 0.3);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.cig-data-table tbody tr:hover {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(139, 92, 246, 0.05));
+  transform: translateX(2px);
+  border-left: 3px solid rgba(6, 182, 212, 0.5);
+}
+
+.cig-data-table tbody tr:nth-child(odd) {
+  background: rgba(55, 65, 81, 0.1);
+}
+
+.cig-data-table tbody tr:nth-child(even) {
+  background: rgba(31, 41, 55, 0.1);
+}
+
+/* Table cell responsive padding */
+.cig-data-table td,
+.cig-data-table th {
+  padding: 1rem;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(75, 85, 99, 0.2);
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .cig-data-table td,
+  .cig-data-table th {
+    padding: 0.75rem 0.5rem;
+    font-size: 0.875rem;
+  }
+  
+  .cig-data-table .text-xl {
+    font-size: 1rem;
+  }
+}
+
+/* Table footer styling */
+.table-footer {
+  background: linear-gradient(135deg, rgba(31, 41, 55, 0.8), rgba(17, 24, 39, 0.8));
+  border-top: 1px solid rgba(6, 182, 212, 0.2);
+}
+
+/* Enhanced scrollbar for table */
+.cig-data-table .overflow-x-auto::-webkit-scrollbar {
+  height: 8px;
+}
+
+.cig-data-table .overflow-x-auto::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.5);
+  border-radius: 4px;
+}
+
+.cig-data-table .overflow-x-auto::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.6), rgba(139, 92, 246, 0.6));
+  border-radius: 4px;
+}
+
+.cig-data-table .overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.8), rgba(139, 92, 246, 0.8));
+}
+
+/* Compact view for table */
+.compact-row td,
+.compact-row th {
+  padding: 0.5rem 1rem !important;
+}
+
+.compact-row {
+  font-size: 0.875rem;
+}
+
+/* Sortable table headers */
+.cig-data-table thead th button {
+  transition: all 0.2s ease-in-out;
+  border-radius: 4px;
+  padding: 0.25rem;
+  margin: -0.25rem;
+}
+
+.cig-data-table thead th button:hover {
+  background: rgba(6, 182, 212, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Enhanced hover effects for table rows */
+.cig-data-table tbody tr {
+  transition: all 0.3s ease-in-out;
+}
+
+.cig-data-table tbody tr:hover {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.05), rgba(139, 92, 246, 0.05)) !important;
+  transform: translateX(2px) scale(1.005);
+  border-left: 3px solid rgba(6, 182, 212, 0.5);
+  box-shadow: 0 2px 8px rgba(6, 182, 212, 0.1);
 } 

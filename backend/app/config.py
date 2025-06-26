@@ -1,6 +1,71 @@
 from pydantic_settings import BaseSettings
 from typing import List
 from pydantic import field_validator
+import socket
+import os
+
+
+def get_server_ips():
+    """Get all IP addresses of the current server"""
+    ips = ['localhost', '127.0.0.1', '0.0.0.0', '*.localhost']
+    
+    try:
+        # Get hostname and resolve to IP
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        if local_ip not in ips:
+            ips.append(local_ip)
+        
+        # Get all network interfaces
+        import netifaces
+        for interface in netifaces.interfaces():
+            try:
+                addrs = netifaces.ifaddresses(interface)
+                for addr_family in addrs:
+                    for addr in addrs[addr_family]:
+                        if 'addr' in addr and addr['addr'] not in ips:
+                            # Add only valid IP addresses
+                            ip = addr['addr']
+                            if not ip.startswith('fe80') and ip != '::1':  # Skip IPv6 link-local and loopback
+                                ips.append(ip)
+            except:
+                continue
+    except ImportError:
+        # Fallback if netifaces is not available
+        try:
+            # Connect to a remote server to get local IP
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(('8.8.8.8', 80))
+                local_ip = s.getsockname()[0]
+                if local_ip not in ips:
+                    ips.append(local_ip)
+        except:
+            pass
+    
+    # Add wildcard for development
+    if os.getenv('DEBUG', '').lower() in ['true', '1', 'yes']:
+        ips.append('*')
+    
+    return ips
+
+
+def get_allowed_origins():
+    """Get all possible frontend origins"""
+    origins = [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://0.0.0.0:3000'
+    ]
+    
+    # Add current server IPs
+    for ip in get_server_ips():
+        if ip not in ['localhost', '127.0.0.1', '0.0.0.0', '*.localhost', '*']:
+            origins.extend([
+                f'http://{ip}:3000',
+                f'https://{ip}:3000'
+            ])
+    
+    return origins
 
 
 class Settings(BaseSettings):
@@ -18,12 +83,14 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
 
-    # CORS
-    allowed_origins: str = "http://localhost:3000"
+    # CORS - Auto-detect origins
+    allowed_origins: str = ""
     
     @field_validator('allowed_origins', mode='after')
     @classmethod
     def parse_cors_origins(cls, v):
+        if not v:  # If empty, use auto-detected origins
+            return get_allowed_origins()
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(',')]
         return v if isinstance(v, list) else [v]
@@ -33,6 +100,18 @@ class Settings(BaseSettings):
     log_level: str = "info"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
+
+    # Allowed hosts - Auto-detect
+    allowed_hosts: str = ""
+    
+    @field_validator('allowed_hosts', mode='after')
+    @classmethod
+    def parse_allowed_hosts(cls, v):
+        if not v:  # If empty, use auto-detected hosts
+            return get_server_ips()
+        if isinstance(v, str):
+            return [host.strip() for host in v.split(',')]
+        return v if isinstance(v, list) else [v]
 
     # Rate Limiting
     rate_limit_per_minute: int = 100

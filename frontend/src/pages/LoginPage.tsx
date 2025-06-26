@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useMutation } from 'react-query';
+import { useMutation, useQueryClient } from 'react-query';
 import { Eye, EyeOff, Database, Zap, Lock, User, ArrowRight } from 'lucide-react';
 import { authAPI } from '../services/api';
 import toast from 'react-hot-toast';
@@ -10,11 +10,15 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const loginMutation = useMutation(authAPI.login, {
     onSuccess: () => {
       toast.success('Login effettuato con successo!');
-      navigate('/');
+      // Invalidate queries to refresh authentication state
+      queryClient.invalidateQueries();
+      // Navigate immediately since we have proper state management
+      navigate('/', { replace: true });
     },
     onError: (error: any) => {
       toast.error(error.message || 'Errore durante il login');

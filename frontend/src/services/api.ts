@@ -16,7 +16,28 @@ import {
   StreamError,
 } from '@/types/api';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api/v1';
+// Dynamic API URL detection
+const getApiBaseUrl = (): string => {
+  // Check for environment variable first
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+
+  // Auto-detect based on current window location
+  const currentHost = window.location.hostname;
+  const currentProtocol = window.location.protocol;
+  
+  // Default API port
+  const apiPort = 8000;
+  
+  // Build API URL based on current location
+  const apiBaseUrl = `${currentProtocol}//${currentHost}:${apiPort}/api/v1`;
+  
+  console.log('🔧 Auto-detected API URL:', apiBaseUrl);
+  return apiBaseUrl;
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Create axios instance
 const api = axios.create({
@@ -28,16 +49,30 @@ const api = axios.create({
 });
 
 // Token management
+let authChangeCallbacks: (() => void)[] = [];
+
 const getToken = (): string | null => {
   return localStorage.getItem('access_token');
 };
 
 const setToken = (token: string): void => {
   localStorage.setItem('access_token', token);
+  // Notify all registered callbacks
+  authChangeCallbacks.forEach(callback => callback());
 };
 
 const removeToken = (): void => {
   localStorage.removeItem('access_token');
+  // Notify all registered callbacks
+  authChangeCallbacks.forEach(callback => callback());
+};
+
+const onAuthChange = (callback: () => void): (() => void) => {
+  authChangeCallbacks.push(callback);
+  // Return cleanup function
+  return () => {
+    authChangeCallbacks = authChangeCallbacks.filter(cb => cb !== callback);
+  };
 };
 
 // Request interceptor to add auth token
@@ -137,6 +172,8 @@ export const authAPI = {
   isAuthenticated: (): boolean => {
     return !!getToken();
   },
+
+  onAuthChange,
 };
 
 export const tablesAPI = {

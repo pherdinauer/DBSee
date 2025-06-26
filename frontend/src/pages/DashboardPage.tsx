@@ -48,6 +48,9 @@ const DashboardPage = () => {
   const [searchResults, setSearchResults] = useState<CIGSearchResult | null>(null);
   const [companyResults, setCompanyResults] = useState<CompanyResult | null>(null);
   const [activeCategory, setActiveCategory] = useState<CIGRecord['categoria'] | null>(null);
+  const [sortBy, setSortBy] = useState<'campo' | 'categoria' | 'fonte'>('categoria');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [compactView, setCompactView] = useState(false);
   
   // Streaming search state
   const [streamingProgress, setStreamingProgress] = useState<StreamingProgress | null>(null);
@@ -84,9 +87,28 @@ const DashboardPage = () => {
   }, [cigDataForTable]);
 
   const filteredCigData = useMemo(() => {
-    if (!activeCategory) return cigDataForTable;
-    return cigDataForTable.filter(item => item.categoria === activeCategory);
-  }, [cigDataForTable, activeCategory]);
+    let filtered = activeCategory 
+      ? cigDataForTable.filter(item => item.categoria === activeCategory)
+      : cigDataForTable;
+    
+    // Apply sorting
+    filtered = [...filtered].sort((a, b) => {
+      let aValue = a[sortBy];
+      let bValue = b[sortBy];
+      
+      if (sortBy === 'categoria') {
+        // Custom sort order for categories
+        const categoryOrder = ['identificativo', 'azienda', 'importo', 'data', 'ente', 'location', 'procedura'];
+        aValue = categoryOrder.indexOf(a.categoria).toString();
+        bValue = categoryOrder.indexOf(b.categoria).toString();
+      }
+      
+      const comparison = aValue.localeCompare(bValue, 'it');
+      return sortOrder === 'desc' ? -comparison : comparison;
+    });
+    
+    return filtered;
+  }, [cigDataForTable, activeCategory, sortBy, sortOrder]);
 
   const {
     data: tables,
@@ -270,6 +292,20 @@ const DashboardPage = () => {
 
   const handleCompanySearch = (companyName: string, yearFilter?: number) => {
     companySearchMutation.mutate({ companyName, yearFilter });
+  };
+
+  const handleSort = (column: 'campo' | 'categoria' | 'fonte') => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortIcon = (column: 'campo' | 'categoria' | 'fonte') => {
+    if (sortBy !== column) return '↕️';
+    return sortOrder === 'asc' ? '↑' : '↓';
   };
 
   return (
@@ -460,15 +496,33 @@ const DashboardPage = () => {
                 )}
               </div>
               
-              {/* Quick Category Links */}
+              {/* Enhanced Quick Category Links */}
               {quickLinks.length > 0 && (
                 <div className="card-neon p-4">
-                  <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                    ⚡ Quick Links per Categoria
-                    <span className="text-sm text-gray-400 font-normal">
-                      Filtra i dati per tipo
-                    </span>
-                  </h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      ⚡ Quick Links per Categoria
+                      <span className="text-sm text-gray-400 font-normal">
+                        Filtra i dati per tipo
+                      </span>
+                    </h3>
+                    
+                    {/* Table Controls */}
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setCompactView(!compactView)}
+                        className={`btn-neon-secondary text-xs px-3 py-1 ${compactView ? 'opacity-100' : 'opacity-70'}`}
+                        title="Vista compatta"
+                      >
+                        {compactView ? '📋' : '📄'} {compactView ? 'Normale' : 'Compatta'}
+                      </button>
+                      
+                      <div className="text-xs text-gray-400">
+                        Ordina per: <span className="text-cyan-300 capitalize">{sortBy}</span> {getSortIcon(sortBy)}
+                      </div>
+                    </div>
+                  </div>
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {quickLinks.map((link) => (
                       <button
@@ -526,43 +580,108 @@ const DashboardPage = () => {
                 </div>
               )}
               
-              {/* Categorized Grid Display */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredCigData.map((item, index) => (
-                  <div
-                    key={`${item.campo}-${index}`}
-                    className="card-neon p-4 hover:scale-[1.02] transition-all duration-300 group"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="text-2xl flex-shrink-0 group-hover:scale-110 transition-transform duration-200">
-                        {item.icon}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between mb-2">
-                          <h3 className="font-semibold text-white text-sm truncate group-hover:text-cyan-300 transition-colors duration-200">
-                            {item.campo}
-                          </h3>
-                          <span className={`${getBadgeClass(item.categoria)} text-xs ml-2 flex-shrink-0`}>
-                            {item.categoria}
-                          </span>
-                        </div>
-                        <p className={`text-sm mb-2 break-words value-${item.categoria} group-hover:scale-[1.01] transition-transform duration-200`}>
-                          {item.valore}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">Fonte:</span>
-                          <span className="font-medium text-gray-400 group-hover:text-gray-300 transition-colors duration-200">
-                            {item.fonte}
-                          </span>
-                        </div>
-                      </div>
+              {/* Categorized Table Display */}
+              <div className="cig-data-table overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr>
+                        <th className="text-left text-cyan-300 font-semibold">
+                          <button
+                            onClick={() => handleSort('campo')}
+                            className="flex items-center gap-2 w-full text-left hover:text-cyan-200 transition-colors duration-200"
+                            title="Clicca per ordinare per nome campo"
+                          >
+                            📋 Nome Campo
+                            <span className="text-xs opacity-70">{getSortIcon('campo')}</span>
+                          </button>
+                        </th>
+                        <th className="text-left text-purple-300 font-semibold">
+                          <div className="flex items-center gap-2">
+                            📄 Parametro
+                          </div>
+                        </th>
+                        <th className="text-left text-orange-300 font-semibold">
+                          <button
+                            onClick={() => handleSort('fonte')}
+                            className="flex items-center gap-2 w-full text-left hover:text-orange-200 transition-colors duration-200"
+                            title="Clicca per ordinare per fonte"
+                          >
+                            🗂️ Fonte
+                            <span className="text-xs opacity-70">{getSortIcon('fonte')}</span>
+                          </button>
+                        </th>
+                        <th className="text-center text-gray-300 font-semibold">
+                          <button
+                            onClick={() => handleSort('categoria')}
+                            className="flex items-center justify-center gap-2 w-full hover:text-gray-200 transition-colors duration-200"
+                            title="Clicca per ordinare per categoria"
+                          >
+                            🏷️ Categoria
+                            <span className="text-xs opacity-70">{getSortIcon('categoria')}</span>
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCigData.map((item, index) => (
+                        <tr 
+                          key={`${item.campo}-${index}`}
+                          className={`transition-all duration-200 group animate-slide-in ${compactView ? 'compact-row' : ''}`}
+                          style={{ animationDelay: `${index * 30}ms` }}
+                        >
+                          <td>
+                            <div className="flex items-center gap-3">
+                              <span className={`group-hover:scale-110 transition-transform duration-200 ${compactView ? 'text-base' : 'text-xl'}`}>
+                                {item.icon}
+                              </span>
+                              <div>
+                                <div className={`font-medium text-white group-hover:text-cyan-300 transition-colors duration-200 ${compactView ? 'text-sm' : ''}`}>
+                                  {item.campo}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className={`font-mono value-${item.categoria} group-hover:scale-[1.01] transition-transform duration-200 ${compactView ? 'text-xs' : 'text-sm'}`}>
+                              {item.valore}
+                            </div>
+                          </td>
+                          <td>
+                            <div className={`text-gray-400 group-hover:text-gray-300 transition-colors duration-200 ${compactView ? 'text-xs' : 'text-sm'}`}>
+                              {item.fonte}
+                            </div>
+                          </td>
+                          <td className="text-center">
+                            <span className={`${getBadgeClass(item.categoria)} ${compactView ? 'text-xs px-2 py-0.5' : 'text-xs'}`}>
+                              {item.categoria}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Table Footer with Statistics */}
+                <div className="table-footer p-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-4">
+                      <span className="text-gray-400">
+                        Visualizzando <span className="text-white font-medium">{filteredCigData.length}</span> di <span className="text-white font-medium">{cigDataForTable.length}</span> campi
+                      </span>
+                      {activeCategory && (
+                        <span className="text-cyan-400">
+                          • Filtrato per: <span className="font-medium">{quickLinks.find(l => l.categoria === activeCategory)?.label}</span>
+                        </span>
+                      )}
                     </div>
-                    
-                    {/* Hover overlay effect */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-lg pointer-events-none" />
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400">CIG:</span>
+                      <span className="font-mono text-cyan-300">{searchResults.cig}</span>
+                    </div>
                   </div>
-                ))}
+                </div>
               </div>
             </div>
           )}

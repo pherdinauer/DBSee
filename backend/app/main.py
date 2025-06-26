@@ -41,7 +41,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "null"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,7 +50,7 @@ app.add_middleware(
 # Trusted host middleware
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "*.localhost"]
+    allowed_hosts=settings.allowed_hosts
 )
 
 
@@ -159,6 +159,11 @@ app.include_router(search.router, prefix="/api/v1")
 async def startup_event():
     """Startup event handler."""
     logger.info("Starting DBSee API...")
+    
+    # Log detected configuration
+    logger.info(f"🌐 Allowed hosts: {settings.allowed_hosts}")
+    logger.info(f"🔗 Allowed CORS origins: {settings.allowed_origins}")
+    logger.info(f"📡 Listening on: {settings.app_host}:{settings.app_port}")
     
     # Check database connection
     if check_database_connection():

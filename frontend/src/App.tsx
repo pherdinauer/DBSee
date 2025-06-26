@@ -8,17 +8,27 @@ import { authAPI } from './services/api';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
+  const [authStateKey, setAuthStateKey] = React.useState(0);
   const hasToken = authAPI.isAuthenticated();
+  
+  // Listen for authentication changes
+  React.useEffect(() => {
+    const unsubscribe = authAPI.onAuthChange(() => {
+      setAuthStateKey(prev => prev + 1);
+    });
+
+    return unsubscribe;
+  }, []);
   
   // Debug logging (only in development)
   React.useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
-      console.log('🔄 Auth state changed. hasToken:', hasToken);
+      console.log('🔄 Auth state changed. hasToken:', hasToken, 'authStateKey:', authStateKey);
     }
-  }, [hasToken]);
+  }, [hasToken, authStateKey]);
   
   const { data: user, isLoading, error } = useQuery(
-    'currentUser',
+    ['currentUser', authStateKey],
     authAPI.getCurrentUser,
     {
       enabled: hasToken,
